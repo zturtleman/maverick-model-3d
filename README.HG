@@ -1,4 +1,4 @@
-If you're seeing this file it is probably because you used Subversion to get
+If you're seeing this file it is probably because you used Mercurial to get
 the source code for this program. If that is the case you may be wondering
 how to build it (since there isn't a ./configure script to run).
 
