@@ -45,9 +45,9 @@
 #define I18N_ROOT             "\\i18n"
 #else
 #if !defined(DOC_ROOT)
-#define DOC_ROOT              PREFIX "/share/doc/mm3d/html"
+#define DOC_ROOT              PREFIX "/share/doc/maverickmodel3d/html"
 #endif
-#define I18N_ROOT             PREFIX "/share/mm3d/i18n"
+#define I18N_ROOT             PREFIX "/share/maverickmodel3d/i18n"
 #endif // WIN32
 
 #define DIR_SLASH             '/'
