@@ -144,7 +144,7 @@ void init_sysconf()
    getcwd( cwd, sizeof(cwd) );
 
    // Try registry first
-   std::string path = Mm3dRegKey::getRegistryString( HKEY_CURRENT_USER, "Software\\Misfit Code\\Misfit Model 3D", "INSTDIR" );
+   std::string path = Mm3dRegKey::getRegistryString( HKEY_CURRENT_USER, "Software\\MaverickModel\\Maverick Model 3D", "INSTDIR" );
 
    if ( path.length() == 0 )
    {
