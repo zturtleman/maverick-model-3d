@@ -46,7 +46,7 @@ static void _writeDefaultFile( const char * filename )
    FILE * fp = fopen( filename, "w" );
    if ( fp )
    {
-      fprintf( fp, "; This file is used to change key bindings for Misfit Model 3D.\n" );
+      fprintf( fp, "; This file is used to change key bindings for Maverick Model 3D.\n" );
       fprintf( fp, ";\n" );
       fprintf( fp, "; To change keyboard shortcuts, add keyboard shortcuts assignments at the bottom \n" );
       fprintf( fp, "; of this file. The format for keyboard shortcuts is:\n" );

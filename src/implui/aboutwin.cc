@@ -27,11 +27,11 @@
 
 #include <QtGui/QTextBrowser>
 
-#define ABOUT_TEXT "<html><head><title>Misfit Model 3D - About</title></head> " \
+#define ABOUT_TEXT "<html><head><title>Maverick Model 3D - About</title></head> " \
    "<body><center><br>" \
-   "<h1>Misfit Model 3D</h1>" \
+   "<h1>Maverick Model 3D</h1>" \
    "<h2>" VERSION_STRING "</h2> <br>" \
-   "http://www.misfitcode.com/misfitmodel3d/<br><br>" \
+   "http://code.google.com/p/maverick-model-3d/<br><br>" \
    "Copyright &copy; 2004-2008, Kevin Worcester<br>" \
    "<font color=\"blue\">kevin&nbsp;at</font>&nbsp;the&nbsp;<font color=\"blue\">misfitcode.com</font> domain<br>" \
    "</center></body></html>" 
@@ -43,7 +43,7 @@ AboutWin::AboutWin( QWidget * parent )
    setupUi( this );
 
    setModal( false );
-   setWindowTitle( tr( "Misfit Model 3D - About") );
+   setWindowTitle( tr( "Maverick Model 3D - About") );
 
    resize( 350, 300 );
    m_text->setHtml( QString( ABOUT_TEXT ) );

@@ -71,7 +71,7 @@ static ModelList _models;
 
 static void _print_version( const char * progname )
 {
-   printf( "\nMisfit Model 3D, version %s\n\n", VERSION_STRING );
+   printf( "\nMaverick Model 3D, version %s\n\n", VERSION_STRING );
 }
 
 static void _print_help( const char * progname )
@@ -110,7 +110,7 @@ static void _print_sysinfo()
    FILE * fp = NULL;
    char input[80];
 
-   printf( "\nMisfit Model 3D, version %s\n\n", VERSION_STRING );
+   printf( "\nMaverick Model 3D, version %s\n\n", VERSION_STRING );
 
    printf( "uname output:\n" );
    fp = popen( "uname -a", "r" );
