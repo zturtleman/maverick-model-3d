@@ -72,10 +72,10 @@ private slots:
       QVERIFY_EQ( std::string("/"), getFilePathFromPath( "/" ) );
       QVERIFY_EQ( std::string("/"), getFilePathFromPath( "/etc" ) );
       QVERIFY_EQ( std::string("/etc"), getFilePathFromPath( "/etc/hosts" ) );
-      QVERIFY_EQ( std::string("/home/user/.mm3d"),
-            getFilePathFromPath( "/home/user/.mm3d/mm3drc" ) );
-      QVERIFY_EQ( std::string(".mm3d"),
-            getFilePathFromPath( ".mm3d/mm3drc" ) );
+      QVERIFY_EQ( std::string("/home/user/.maverickmodel3d"),
+            getFilePathFromPath( "/home/user/.maverickmodel3d/mm3drc" ) );
+      QVERIFY_EQ( std::string(".maverickmodel3d"),
+            getFilePathFromPath( ".maverickmodel3d/mm3drc" ) );
       QVERIFY_EQ( std::string("some/longer/dir"),
             getFilePathFromPath( "some/longer/dir/file" ) );
       QVERIFY_EQ( std::string("."), getFilePathFromPath( "./file.txt" ) );
@@ -86,10 +86,10 @@ private slots:
       QVERIFY_EQ( std::string("\\"), getFilePathFromPath( "\\" ) );
       QVERIFY_EQ( std::string("\\"), getFilePathFromPath( "\\etc" ) );
       QVERIFY_EQ( std::string("\\etc"), getFilePathFromPath( "\\etc\\hosts" ) );
-      QVERIFY_EQ( std::string("\\home\\user\\.mm3d"),
-            getFilePathFromPath( "\\home\\user\\.mm3d\\mm3drc" ) );
-      QVERIFY_EQ( std::string(".mm3d"),
-            getFilePathFromPath( ".mm3d\\mm3drc" ) );
+      QVERIFY_EQ( std::string("\\home\\user\\.maverickmodel3d"),
+            getFilePathFromPath( "\\home\\user\\.maverickmodel3d\\mm3drc" ) );
+      QVERIFY_EQ( std::string(".maverickmodel3d"),
+            getFilePathFromPath( ".maverickmodel3d\\mm3drc" ) );
       QVERIFY_EQ( std::string("some\\longer\\dir"),
             getFilePathFromPath( "some\\longer\\dir\\file" ) );
       QVERIFY_EQ( std::string("."), getFilePathFromPath( ".\\file.txt" ) );
@@ -104,9 +104,9 @@ private slots:
       QVERIFY_EQ( std::string("etc"), getFileNameFromPath( "/etc" ) );
       QVERIFY_EQ( std::string("hosts"), getFileNameFromPath( "/etc/hosts" ) );
       QVERIFY_EQ( std::string("mm3drc"),
-            getFileNameFromPath( "/home/user/.mm3d/mm3drc" ) );
+            getFileNameFromPath( "/home/user/.maverickmodel3d/mm3drc" ) );
       QVERIFY_EQ( std::string("mm3drc"),
-            getFileNameFromPath( ".mm3d/mm3drc" ) );
+            getFileNameFromPath( ".maverickmodel3d/mm3drc" ) );
       QVERIFY_EQ( std::string("file"),
             getFileNameFromPath( "some/longer/dir/file" ) );
       QVERIFY_EQ( std::string("file.txt"), getFileNameFromPath( "./file.txt" ) );
@@ -118,9 +118,9 @@ private slots:
       QVERIFY_EQ( std::string("etc"), getFileNameFromPath( "\\etc" ) );
       QVERIFY_EQ( std::string("hosts"), getFileNameFromPath( "\\etc\\hosts" ) );
       QVERIFY_EQ( std::string("mm3drc"),
-            getFileNameFromPath( "\\home\\user\\.mm3d\\mm3drc" ) );
+            getFileNameFromPath( "\\home\\user\\.maverickmodel3d\\mm3drc" ) );
       QVERIFY_EQ( std::string("mm3drc"),
-            getFileNameFromPath( ".mm3d\\mm3drc" ) );
+            getFileNameFromPath( ".maverickmodel3d\\mm3drc" ) );
       QVERIFY_EQ( std::string("file"),
             getFileNameFromPath( "some\\longer\\dir\\file" ) );
       QVERIFY_EQ( std::string("file.txt"), getFileNameFromPath( ".\\file.txt" ) );

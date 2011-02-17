@@ -25,7 +25,7 @@
 #ifdef WIN32
 #define HOME_MM3D             "\\userhome"
 #else
-#define HOME_MM3D             "/.mm3d"
+#define HOME_MM3D             "/.maverickmodel3d"
 #endif // WIN32
 
 #ifdef WIN32
@@ -33,7 +33,7 @@
 #define HOME_PLUGINS          "\\plugins"
 #else
 #if !defined(SHARED_PLUGINS)
-#define SHARED_PLUGINS        PREFIX "/share/mm3d/plugins"
+#define SHARED_PLUGINS        PREFIX "/share/maverickmodel3d/plugins"
 #endif
 #define HOME_PLUGINS          "/plugins"
 #endif // WIN32
