@@ -34,6 +34,7 @@
    "http://code.google.com/p/maverick-model-3d/<br><br>" \
    "Copyright &copy; 2004-2008, Kevin Worcester<br>" \
    "<font color=\"blue\">kevin&nbsp;at</font>&nbsp;the&nbsp;<font color=\"blue\">misfitcode.com</font> domain<br>" \
+   "Copyright &copy; 2009-2011, Zack \"ZTurtleMan\" Middleton<br>" \
    "</center></body></html>" 
 
 AboutWin::AboutWin( QWidget * parent )
@@ -45,7 +46,7 @@ AboutWin::AboutWin( QWidget * parent )
    setModal( false );
    setWindowTitle( tr( "Maverick Model 3D - About") );
 
-   resize( 350, 300 );
+   resize( 450, 340 );
    m_text->setHtml( QString( ABOUT_TEXT ) );
 }
 
