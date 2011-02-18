@@ -1,6 +1,7 @@
 /*  Md3Filter plugin for Maverick Model 3D
  *
  *  Copyright (c) 2005-2007 Russell Valentine and Kevin Worcester
+ *  Copyright (c) 2009-2011 Zack "ZTurtleMan" Middleton
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -63,9 +64,18 @@ static Md3Filter * s_filter = NULL;
 
 const int MD3_ANIMATIONS = 25;
 
-const int HEADER_SIZE = (11 * 4) + MAX_QPATH;
-const int FRAME_SIZE = ( 3 * ( 3 * 4 ) + 4 + 16 );
-const int TAG_SIZE = ( MAX_QPATH + ( 4 * 3 ) + ( 3 * 4 * 3 ) );
+const int MD3_HEADER_SIZE = (11 * 4) + MAX_QPATH; // Same for model and each mesh in model
+const int MD3_FRAME_SIZE = ( 3 * ( 3 * 4 ) + 4 + 16 );
+const int MD3_TAG_SIZE = ( MAX_QPATH + ( 4 * 3 ) + ( 3 * 4 * 3 ) );
+#ifdef MDR_GENERAL
+const int MDR_HEADER_SIZE = (10 * 4) + MAX_QPATH; // model header size, mesh header must add MAX_QPATH
+const int MDR_FRAME_SIZE = MD3_FRAME_SIZE; // NOTE: must add (numBones * MDR_BONE_SIZE)
+const int MDR_BONE_SIZE = (4 * (3 * 4) );
+const int MDR_LOD_SIZE = (3 * 4);
+const int MDR_TAG_SIZE = 32 + 4; // unused
+const int MDR_COMP_FRAME_SIZE = ( 3 * ( 3 * 4 ) + 4); // NOTE: must add (numBones * MDR_COMP_BONE_SIZE)
+const int MDR_COMP_BONE_SIZE = (2 * (3 * 4) );
+#endif
 
 
 const char s_animNames[ MD3_ANIMATIONS ][16] = 
@@ -97,62 +107,13 @@ const char s_animNames[ MD3_ANIMATIONS ][16] =
    "legs_turn",
 };
 
-int s_animLoop[ MD3_ANIMATIONS ] = 
+const char *s_animSyncWarning[] =
 {
-   0, // both_death1
-   0, // both_dead1
-   0, // both_death2
-   0, // both_dead2
-   0, // both_death3
-   0, // both_dead3
-   0, // torso_gesture
-   0, // torso_attack
-   0, // torso_attack2
-   0, // torso_drop
-   0, // torso_raise
-   1, // torso_stand
-   1, // torso_stand2
-   1, // legs_walkcr
-   1, // legs_walk
-   1, // legs_run
-   1, // legs_back
-   1, // legs_swim
-   0, // legs_jump
-   0, // legs_land
-   0, // legs_jumpb
-   0, // legs_landb
-   1, // legs_idle
-   1, // legs_idlecr
-   1, // legs_turn
-};
-
-int s_animSyncWarning[ MD3_ANIMATIONS ] = 
-{
-   0, // both_death1
-   0, // both_dead1
-   0, // both_death2
-   0, // both_dead2
-   0, // both_death3
-   0, // both_dead3
-   0, // torso_gesture
-   1, // torso_attack
-   1, // torso_attack2
-   1, // torso_drop
-   1, // torso_raise
-   0, // torso_stand
-   0, // torso_stand2
-   0, // legs_walkcr
-   0, // legs_walk
-   0, // legs_run
-   0, // legs_back
-   0, // legs_swim
-   0, // legs_jump
-   0, // legs_land
-   0, // legs_jumpb
-   0, // legs_landb
-   0, // legs_idle
-   0, // legs_idlecr
-   0, // legs_turn
+   "torso_attack",
+   "torso_attack2",
+   "torso_drop",
+   "torso_raise",
+   NULL
 };
 
 Md3Filter::Md3Filter()
@@ -162,6 +123,28 @@ Md3Filter::Md3Filter()
 Md3Filter::~Md3Filter()
 {
 }
+
+#ifdef MDR_GENERAL
+bool Md3Filter::isMdr(const char *filename)
+{
+   unsigned len = strlen( filename );
+
+   return ( len >= 4 && strcasecmp( &filename[len-4], ".mdr" ) == 0 );
+}
+
+Model::AnimationModeE Md3Filter::animMode(Md3Filter::MeshTypeE type)
+{
+
+   if (type == MT_MDR)
+   {
+      return Model::ANIMMODE_SKELETAL;
+   }
+   else // MT_MD3
+   {
+      return Model::ANIMMODE_FRAME;
+   }
+}
+#endif
 
 Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filename )
 {
@@ -202,14 +185,25 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
       string lowerFile = m_modelPath + fixFileCase( m_modelPath.c_str(), "lower.md3" );
       string upperFile = m_modelPath + fixFileCase( m_modelPath.c_str(), "upper.md3" );
       string headFile  = m_modelPath + fixFileCase( m_modelPath.c_str(), "head.md3"  );
+#ifdef MDR_LOAD
+      string lowerFileMDR = m_modelPath + fixFileCase( m_modelPath.c_str(), "lower.mdr" );
+      string upperFileMDR = m_modelPath + fixFileCase( m_modelPath.c_str(), "upper.mdr" );
+      string headFileMDR  = m_modelPath + fixFileCase( m_modelPath.c_str(), "head.mdr"  );
+#endif
 
       if (     strncasecmp( m_modelBaseName.c_str(), "lower.", 6 ) == 0 
             || strncasecmp( m_modelBaseName.c_str(), "upper.", 6 ) == 0 
             || strncasecmp( m_modelBaseName.c_str(), "head.",  5 ) == 0 )
       {
+#ifdef MDR_LOAD
+         if ( (file_exists( lowerFile.c_str() ) || file_exists( lowerFileMDR.c_str() ))
+               && (file_exists( upperFile.c_str() ) || file_exists( upperFileMDR.c_str() ))
+               && (file_exists( headFile.c_str() ) || file_exists( headFileMDR.c_str() )) )
+#else
          if ( file_exists( lowerFile.c_str() )
                && file_exists( upperFile.c_str() )
                && file_exists( headFile.c_str() ) )
+#endif
          {
             log_debug( "have all files for %s\n", m_modelPath.c_str() );
 
@@ -235,7 +229,20 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
          Md3FileDataT fd;
 
          fd.section = MS_Lower;
+#ifdef MDR_LOAD
+         if ( file_exists( lowerFileMDR.c_str() ) )
+         {
+            fd.type = MT_MDR;
+            fd.modelBaseName = "lower.mdr";
+         }
+         else
+         {
+            fd.type = MT_MD3;
+            fd.modelBaseName = "lower.md3";
+         }
+#else
          fd.modelBaseName = "lower.md3";
+#endif
          fd.modelFile = lowerFile;
          fd.tag = "";
          fd.tagPoint = -1;
@@ -248,13 +255,39 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
          fileList.push_back( fd );
 
          fd.section = MS_Upper;
+#ifdef MDR_LOAD
+         if ( file_exists( upperFileMDR.c_str() ) )
+         {
+            fd.type = MT_MDR;
+            fd.modelBaseName = "upper.mdr";
+         }
+         else
+         {
+            fd.type = MT_MD3;
+            fd.modelBaseName = "upper.md3";
+         }
+#else
          fd.modelBaseName = "upper.md3";
+#endif
          fd.modelFile = upperFile;
          fd.tag = "tag_torso";
          fileList.push_back( fd );
 
          fd.section = MS_Head;
+#ifdef MDR_LOAD
+         if ( file_exists( headFileMDR.c_str() ) )
+         {
+            fd.type = MT_MDR;
+            fd.modelBaseName = "head.mdr";
+         }
+         else
+         {
+            fd.type = MT_MD3;
+            fd.modelBaseName = "head.md3";
+         }
+#else
          fd.modelBaseName = "head.md3";
+#endif
          fd.modelFile = headFile;
          fd.tag = "tag_head";
          fileList.push_back( fd );
@@ -263,6 +296,16 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
       {
          Md3FileDataT fd;
 
+#ifdef MDR_LOAD
+         if ( isMdr(m_modelBaseName.c_str()) )
+         {
+            fd.type = MT_MDR;
+         }
+         else
+         {
+            fd.type = MT_MD3;
+         }
+#endif
          fd.section = MS_None;
          fd.modelBaseName = m_modelBaseName;
          fd.modelFile = filename;
@@ -306,6 +349,12 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
 
          m_model = model;
 
+#ifdef MDR_LOAD
+         m_animationMode = animMode((*it).type);
+#else
+         m_animationMode = Model::ANIMMODE_FRAME;
+#endif
+
          Matrix loadMatrix;
          loadMatrix.setRotationInDegrees( -90, -90, 0 );
 
@@ -316,6 +365,110 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
          readString( pk3Name, sizeof( pk3Name ) );
          replaceBackslash( pk3Name );
 
+#ifdef MDR_LOAD
+         // MD3 header data.
+         int32_t flags = 0; // MD3 only
+         int32_t numFrames = 0;
+         int32_t numTags = 0;
+         int32_t numMeshes = 0; // MD3 only
+         int32_t numSkins = 0; // MD3 only
+         int32_t offsetFrames = 0;
+         int32_t offsetTags = 0;
+         int32_t offsetMeshes = 0; // MD3 only
+         int32_t offsetEnd = 0;
+
+         // MDR header data.
+         //int32_t numFrames = 0;
+         int32_t numBones = 0;
+         //int32_t offsetFrames = 0;
+         int32_t numLODs = 0;
+         int32_t offsetLODs = 0;
+         //int32_t numTags = 0;
+         //int32_t offsetTags = 0;
+         //int32_t offsetEnd = 0;
+         bool compressed = false;
+
+         if ((*it).type == MT_MDR)
+         {
+            numFrames = m_src->readI32();
+            numBones = m_src->readI32();
+            offsetFrames = m_src->readI32();
+            // check if compressed
+            if (offsetFrames < 0) {
+                offsetFrames = -offsetFrames;
+                compressed = true;
+            }
+            numLODs = m_src->readI32();
+            offsetLODs = m_src->readI32();
+            numTags = m_src->readI32();
+            offsetTags = m_src->readI32();
+            offsetEnd = m_src->readI32();
+
+            log_debug( "Magic: %c%c%c%c\n", magic[0], magic[1], magic[2], magic[3] );
+            log_debug( "Version: %d\n",     version );
+            log_debug( "Compressed: %d\n",    compressed );
+            log_debug( "PK3 Name: %s\n",    pk3Name );
+            log_debug( "Frames: %d\n",      numFrames );
+            log_debug( "Bones: %d\n",    numBones );
+            log_debug( "Offset Frames: %d\n",      offsetFrames );
+            log_debug( "LODs: %d\n",       numLODs );
+            log_debug( "Offset LODs: %d\n",      offsetLODs );
+            log_debug( "Tags: %d\n",        numTags );
+            log_debug( "Offset Tags: %d\n",  offsetTags );
+            log_debug( "Offset End: %d\n",        offsetEnd );
+            log_debug( "File Length: %d\n",       m_src->getFileSize() );
+
+            if ( magic[0] != 'R' && magic[1] != 'D' && magic[2] != 'M' && magic[3] != '5' )
+            {
+               log_debug( "Bad Magic: %c%c%c%c\n", magic[0], magic[1], magic[2], magic[3] );
+               return Model::ERROR_BAD_MAGIC;
+            }
+
+            if ( version != MDR_VERSION )
+            {
+               return Model::ERROR_UNSUPPORTED_VERSION;
+            }
+
+            model->addMetaData( "MDR_compressed", compressed ? "1" : "0" );
+         }
+         else // MT_MD3
+         {
+            flags = m_src->readI32();
+            numFrames = m_src->readI32();
+            numTags = m_src->readI32();
+            numMeshes = m_src->readI32();
+            numSkins = m_src->readI32();
+            offsetFrames = m_src->readI32();
+            offsetTags = m_src->readI32();
+            offsetMeshes = m_src->readI32();
+            offsetEnd = m_src->readI32();
+
+            log_debug( "Magic: %c%c%c%c\n", magic[0], magic[1], magic[2], magic[3] );
+            log_debug( "Version: %d\n",     version );
+            log_debug( "PK3 Name: %s\n",    pk3Name );
+            log_debug( "Flags: %d\n",    flags );
+            log_debug( "Frames: %d\n",      numFrames );
+            log_debug( "Tags: %d\n",        numTags );
+            log_debug( "Meshes: %d\n",    numMeshes );
+            log_debug( "Skins: %d\n",       numSkins );
+            log_debug( "Offset Frames: %d\n",      offsetFrames );
+            log_debug( "Offset Tags: %d\n",  offsetTags );
+            log_debug( "Offset Meshes: %d\n",  offsetMeshes );
+            log_debug( "Offset End: %d\n",        offsetEnd );
+            log_debug( "File Length: %d\n",       m_src->getFileSize() );
+
+            if ( magic[0] != 'I' && magic[1] != 'D' && magic[2] != 'P' && magic[3] != '3' )
+            {
+               log_debug( "Bad Magic: %c%c%c%c\n", magic[0], magic[1], magic[2], magic[3] );
+               return Model::ERROR_BAD_MAGIC;
+            }
+
+            if ( version != MD3_VERSION )
+            {
+               return Model::ERROR_UNSUPPORTED_VERSION;
+            }
+         }
+#else
          int32_t flags = m_src->readI32();
          int32_t numFrames = m_src->readI32();
          int32_t numTags = m_src->readI32();
@@ -350,6 +503,7 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
          {
             return Model::ERROR_UNSUPPORTED_VERSION;
          }
+#endif
 
          
          Md3PathT mpath;
@@ -364,6 +518,10 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
          // frames
          // mm3d doesn't need this, but nice to have if you ever need to debug
 
+#ifdef MDR_LOAD
+         if ((*it).type == MT_MD3)
+         {
+#endif
 #if 0
          m_src->seek( offsetFrames );
          for ( int i = 0; i < numFrames; i++ )
@@ -398,6 +556,9 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
             log_debug( "Frame %d name: %s\n", i, frameName );
          }
 #endif // 1
+#ifdef MDR_LOAD
+         }
+#endif
 
          if ( (*it).tag.size() > 0 )
          {
@@ -405,9 +566,21 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
             log_debug( "tag point for %s is %d\n", (*it).tag.c_str(), (*it).tagPoint );
          }
 
+#ifdef MDR_LOAD
+         if ((*it).type == MT_MDR)
+         {
+            // Adds bone joints, plus adds tags and connected to bone joints
+            MDRsetBoneJoints( (*it).section, compressed, offsetFrames, numFrames, numBones, offsetTags, numTags, (*it).tagPoint, -1 );
+         }
+         else
+         {
+#endif
          m_meshVecInfos = new MeshVectorInfoT*[numMeshes];
          setPoints( (*it).section, offsetTags, numTags, numFrames, (*it).tagPoint, -1 );
          setMeshes( (*it).section, offsetMeshes, numMeshes, (*it).tagPoint, -1 );
+#ifdef MDR_LOAD
+         }
+#endif
 
          (*it).meshVecInfos = m_meshVecInfos;
          (*it).src = m_src;
@@ -416,24 +589,34 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
          (*it).offsetTags = offsetTags;
          (*it).numTags = numTags;
          (*it).numFrames = numFrames;
+#ifdef MDR_LOAD
+         (*it).numBones = numBones;
+         (*it).numLODs = numLODs;
+         (*it).offsetLODs = offsetLODs;
+#endif
       }
 
       if ( fileList.front().numFrames > 1 )
       {
          log_debug( "Model has animation, setting up animation mode.\n" );
-         if ( m_model->getAnimCount( Model::ANIMMODE_FRAME ) == 0 )
+         if ( m_model->getAnimCount( m_animationMode ) == 0 )
          {
             if ( !loadAll || !readAnimations( true ) )
             {
-               int animIndex = m_model->addAnimation( Model::ANIMMODE_FRAME, "AnimFrames" );
-               m_model->setAnimFPS( Model::ANIMMODE_FRAME, animIndex, 15.0);
-               m_model->setAnimFrameCount( Model::ANIMMODE_FRAME, 0, fileList.front().numFrames );
+               int animIndex = m_model->addAnimation( m_animationMode, "AnimFrames" );
+               m_model->setAnimFPS( m_animationMode, animIndex, 15.0);
+               m_model->setAnimFrameCount( m_animationMode, animIndex, fileList.front().numFrames );
+               m_model->setAnimationLooping( m_animationMode, animIndex, false );
             }
          }
       }
 
       for ( it = fileList.begin(); it != fileList.end(); it++ )
       {
+#ifdef MDR_LOAD
+         if ((*it).type != MT_MD3)
+            continue;
+#endif
          m_meshVecInfos = (*it).meshVecInfos;
          m_src = (*it).src;
 
@@ -500,11 +683,18 @@ Model::ModelErrorE Md3Filter::readFile( Model * model, const char * const filena
       // Clean-up
       for ( it = fileList.begin(); it != fileList.end(); it++ )
       {
+#ifdef MDR_LOAD
+         if ((*it).type == MT_MD3)
+         {
+#endif
          for ( int i = 0; i < (*it).numMeshes; i++ )
          {
             delete[] (*it).meshVecInfos[i];
          }
          delete[] (*it).meshVecInfos;
+#ifdef MDR_LOAD
+         }
+#endif
 
          (*it).src->close();
          (*it).src = NULL;
@@ -531,10 +721,16 @@ bool Md3Filter::readAnimations( bool create )
    string animFile = m_modelPath + "animation.cfg";
    FILE * fp = fopen( animFile.c_str(), "r" );
    int animCount = 0;
+   std::vector<std::string> animNames;
+   int last_fcount = 0;
+   bool eliteLoop = false;
+   std::vector<int> animLoop;
+   int animKeyword = 0;
 
    m_animStartFrame.clear();
    m_standFrame = 0;
    m_idleFrame = 0;
+   m_headFrame = 0;
 
    int bothStart = -1;
    int bothEnd = -1;
@@ -542,6 +738,8 @@ bool Md3Filter::readAnimations( bool create )
    int torsoEnd = -1;
    int legsStart = -1;
    int legsEnd = -1;
+   int headStart = -1;
+   int headEnd = -1;
 
    if ( fp != NULL )
    {
@@ -563,22 +761,105 @@ bool Md3Filter::readAnimations( bool create )
             int fcount = 0;
             int loop   = 0;
             int fps    = 0;
-            if ( sscanf( line, "%d %d %d %d",
-                     &first, &fcount, &loop, &fps ) == 4 )
+            char comment[128] = { 0 }; // May hold "//" or "//BOTH_x..."
+            char fname[128] = { 0 }; // May hold "BOTH_x..."
+
+            // Loads the following types
+            // "0 5 5 15"
+            // "0 5 5 15 //"
+            // "0 5 5 15 //BOTH_DEATH1"
+            // "0 5 5 15 // BOTH_DEATH1"
+            // "0 5 5 15 //         BOTH_DEATH1"
+            // "BOTH_DEATH1 0 5 5 15" (Elite Force Single Player style)
+            // If EF SP style, must check if valid animation name
+            //   (or metadata could be loaded as animation)
+
+            if ( sscanf( line, "%d %d %d %d %s %s",
+                   &first, &fcount, &loop, &fps, comment, fname ) >= 4
+                || (sscanf( line, "%s %d %d %d %d",
+                      fname, &first, &fcount, &loop, &fps ) == 5
+                    && (strncasecmp(fname, "all_", 4) == 0 || strncasecmp(fname, "both_", 5) == 0
+                      || strncasecmp(fname, "torso_", 6) == 0 || strncasecmp(fname, "legs_", 5) == 0
+                      || strncasecmp(fname, "head_", 5) == 0)
+                    && (animKeyword || (animKeyword = 1)) ))
             {
                log_debug( "got anim frame details\n" );
-               if ( animCount == 11 )
+
+               // Check for animations that are played in reverse
+               if (fcount < 0)
                {
-                  m_standFrame = first;
-               }
-               else if ( animCount == 22 )
-               {
-                  m_idleFrame = first;
+                  // ZTM: FIXME: Make a note that it is reversed?
+                  fcount = abs(fcount);
                }
 
-               if ( animCount < 6 )
+               animLoop.push_back(loop);
+               if (create && loop == -1 && !eliteLoop)
                {
-                  if ( first + fcount > legsEnd )
+                  m_model->addMetaData( "MD3_EliteLoop", "1" );
+                  eliteLoop = true;
+               }
+
+               if (create && animKeyword == 1)
+               {
+                  m_model->addMetaData( "MD3_AnimKeyword", "1" );
+                  animKeyword = 2; // Avoid setting MD3_AnimKeyword each time
+               }
+
+               char * name = NULL;
+
+               // Check if read name from file.
+               if (strlen(comment) > 6 || strlen(fname) > 4)
+               {
+                  // "//ALL_x..."
+                  if (strlen(comment) > 6 && strncasecmp(comment, "//", 2) == 0)
+                  {
+                     name = &comment[2];
+                  }
+                  // "ALL_x..."
+                  else //if (strlen(fname) > 4)
+                  {
+                     name = fname;
+                  }
+
+                  for ( int i = 0; name[i]; i++ )
+                  {
+                     name[i] = tolower( name[i] );
+                  }
+               }
+               else
+               {
+                  // Failed to load name from file, use default.
+                  if ( animCount < MD3_ANIMATIONS )
+                  {
+                     // I won't change it, I promise
+                     name = (char *) s_animNames[ animCount ];
+                  }
+                  else
+                  {
+                     name = (char *) "Unknown";
+                  }
+               }
+
+               // Save name for offset fixing after animations are loaded.
+               animNames.push_back(name);
+
+               if ( strncasecmp( name, "all_", 4 ) == 0 )
+               {
+                  // Check for single frame dead animation that use the last
+                  //   frame of the death animation
+                  if (animCount > 0 && strncasecmp(name, "all_dead", 8) == 0
+                     && strncasecmp(animNames[animCount-1].c_str(), "all_death", 9) == 0
+                     && fcount <= 1 )
+                  {
+                     if (m_animStartFrame[animCount-1] + last_fcount - 1 == first)
+                     {
+                        fcount = 0;
+                     }
+                  }
+               }
+               else if ( strncasecmp( name, "both_", 5 ) == 0 )
+               {
+                  if ( first + fcount > headEnd )
                   {
                      if ( bothStart == -1 )
                      {
@@ -591,8 +872,20 @@ bool Md3Filter::readAnimations( bool create )
                         bothEnd = std::max(bothEnd, first + fcount);
                      }
                   }
+
+                  // Check for single frame dead animation that use the last
+                  //   frame of the death animation
+                  if (animCount > 0 && strncasecmp(name, "both_dead", 9) == 0
+                     && strncasecmp(animNames[animCount-1].c_str(), "both_death", 10) == 0
+                     && fcount <= 1 )
+                  {
+                     if (m_animStartFrame[animCount-1] + last_fcount - 1 == first)
+                     {
+                        fcount = 0;
+                     }
+                  }
                }
-               else if ( animCount < 13 )
+               else if ( strncasecmp( name, "torso_", 6 ) == 0 )
                {
                   if ( first + fcount > legsEnd )
                   {
@@ -607,8 +900,13 @@ bool Md3Filter::readAnimations( bool create )
                         torsoEnd = std::max(torsoEnd, first + fcount);
                      }
                   }
+
+                  if ( strcasecmp(name, "torso_stand") == 0 )
+                  {
+                     m_standFrame = first;
+                  }
                }
-               else
+               else if ( strncasecmp( name, "legs_", 5 ) == 0 )
                {
                   if ( legsStart == -1 )
                   {
@@ -620,122 +918,97 @@ bool Md3Filter::readAnimations( bool create )
                      legsStart = std::min(legsStart, first);
                      legsEnd = std::max(legsEnd, first + fcount);
                   }
+
+                  if ( strcasecmp(name, "legs_idle") == 0 )
+                  {
+                     m_idleFrame = first;
+                  }
+               }
+               else if ( strncasecmp( name, "head_", 5 ) == 0 )
+               {
+                  if ( headStart == -1 )
+                  {
+                     headStart = first;
+                     headEnd = first + fcount;
+                  }
+                  else
+                  {
+                     headStart = std::min(headStart, first);
+                     headEnd = std::max(headEnd, first + fcount);
+                  }
+
+                  if ( strcasecmp(name, "head_idle") == 0 )
+                  {
+                     m_headFrame = first;
+                  }
+               }
+               else
+               {
+                  // Unknown animation
+                  log_debug( "unknown animation type-prefix '%s'\n", name );
                }
 
                m_animStartFrame.push_back( first );
 
                if ( create )
                {
-                  const char * name = NULL;
-                  if ( animCount < MD3_ANIMATIONS )
-                  {
-                     // I won't change it, I promise
-                     name = (char *) s_animNames[ animCount ];
-                  }
-                  else
-                  {
-                     char * tempname = strrchr( line, '/' );
-                     if ( tempname )
-                     {
-                        tempname++;
-                        while ( isspace(tempname[0]) )
-                        {
-                           tempname++;
-                        }
-                        int end = 0;
-                        while ( tempname[end] && !isspace(tempname[end]) )
-                        {
-                           end++;
-                        }
-                        tempname[end] = '\0';
-
-                        for ( end = 0; line[end]; end++ )
-                        {
-                           tempname[end] = tolower( line[end] );
-                        }
-                        name = tempname;
-                     }
-                     else
-                     {
-                        name = "Unknown";
-                     }
-                  }
-
                   log_debug( "adding animation '%s'\n", name );
-                  int animIndex = m_model->addAnimation( Model::ANIMMODE_FRAME, s_animNames[ animCount ] );
-                  m_model->setAnimFPS( Model::ANIMMODE_FRAME, animIndex, (double) fps );
-                  m_model->setAnimFrameCount( Model::ANIMMODE_FRAME, animIndex, fcount );
+                  int animIndex = m_model->addAnimation( m_animationMode, name );
+                  m_model->setAnimFPS( m_animationMode, animIndex, (double) fps );
+                  m_model->setAnimFrameCount( m_animationMode, animIndex, fcount );
                }
 
                animCount++;
+               last_fcount = fcount;
             }
             else
             {
                if ( create )
                {
-                  char * value = NULL;
-                  if ( strncasecmp( line, "sex", 3 ) == 0 )
-                  {
-                     // sex (m,f,n)
-                     value = &line[3];
-                     while( isspace(value[0]) )
-                     {
-                        value++;
-                     }
-                     int end = 0;
-                     while ( value[end] && !isspace( value[end] ) )
-                     {
-                        end++;
-                     }
-                     value[end] = '\0';
+                  bool checkValue = false;
+                  char *name = NULL;
+                  std::string str;
 
-                     m_model->addMetaData( "MD3_sex", value );
-                  }
-                  else if ( strncasecmp( line, "footsteps", 9 ) == 0 )
+                  // save "name value"
+                  name = line;
+                  while( isspace(name[0]) )
                   {
-                     // footsteps (normal,boot,flesh,mech)
-                     value = &line[9];
-                     while( isspace(value[0]) )
+                     name++;
+                  }
+                  int end = 0;
+                  while ( name[end] && name[end] != '\r' && name[end] != '\n' )
+                  {
+                     if (isspace(name[end]))
                      {
-                        value++;
+                        checkValue = true;
+                        break;
                      }
-                     int end = 0;
-                     while ( value[end] && !isspace( value[end] ) )
-                     {
-                        end++;
-                     }
-                     value[end] = '\0';
+                     end++;
+                  }
+                  name[end] = '\0';
+                  end++;
+                  str = "MD3_CFG_";
+                  str += name;
 
-                     m_model->addMetaData( "MD3_footsteps", value );
-                  }
-                  else if ( strncasecmp( line, "headoffset", 10 ) == 0 )
+                  if (checkValue)
                   {
-                     // headoffset %d %d %d
-                     value = &line[10];
+                     char *value = &name[end];
                      while( isspace(value[0]) )
                      {
                         value++;
                      }
-                     int end = 0;
+                     end = 0;
                      while ( value[end] && value[end] != '\r' && value[end] != '\n' )
                      {
                         end++;
                      }
                      value[end] = '\0';
 
-                     m_model->addMetaData( "MD3_headoffset", value );
-                  }
-                  else if ( strncasecmp( line, "fixedtorso", 10 ) == 0 )
-                  {
-                     m_model->addMetaData( "MD3_fixedtorso", "" );
-                  }
-                  else if ( strncasecmp( line, "fixedlegs", 9 ) == 0 )
-                  {
-                     m_model->addMetaData( "MD3_fixedlegs", "" );
+                     m_model->addMetaData( str.c_str(), value );
                   }
                   else
                   {
-                     log_warning( "Unknown meta data: %s", line );
+                     m_model->addMetaData( str.c_str(), "" );
                   }
                }
             }
@@ -743,6 +1016,35 @@ bool Md3Filter::readAnimations( bool create )
       }
 
       fclose( fp );
+
+      // Set looping
+      if (create)
+      {
+         int animCount = m_model->getAnimCount( m_animationMode );
+         for (int animIndex = 0; animIndex < animCount; ++animIndex)
+         {
+            bool loop = (eliteLoop) ? (animLoop[animIndex] == 0) : (animLoop[animIndex] != 0);
+            m_model->setAnimationLooping( m_animationMode, animIndex, loop );
+         }
+      }
+
+      if (m_standFrame == 0 && torsoStart > 0)
+      {
+         // Didn't find "torso_stand", use first torso frame
+         m_standFrame = torsoStart;
+      }
+
+      if (m_idleFrame == 0 && legsStart > 0)
+      {
+         // Didn't find "legs_idle", use first legs frame
+         m_idleFrame = legsStart;
+      }
+
+      if (m_headFrame == 0 && headStart > 0)
+      {
+         // Didn't find "head_idle", use first head frame
+         m_headFrame = headStart;
+      }
 
       // Some animation files have the leg frames continuously numbered 
       // after the torso frames, others number the legs following the
@@ -752,14 +1054,31 @@ bool Md3Filter::readAnimations( bool create )
       if ( legsStart >= torsoEnd )
       {
          int animOffset = legsStart - torsoStart;
-         for ( size_t a = 13; a < m_animStartFrame.size(); ++a )
+         for ( size_t a = 0; a < m_animStartFrame.size(); ++a )
          {
+            if ( strncasecmp( animNames[a].c_str(), "legs_", 5 ) != 0 )
+               continue;
             if ( m_animStartFrame[a] >= animOffset )
                m_animStartFrame[a] -= animOffset;
          }
          
          if ( m_idleFrame >= animOffset )
             m_idleFrame -= animOffset;
+      }
+
+      if ( headStart >= bothEnd )
+      {
+         int animOffset = headStart - bothStart;
+         for ( size_t a = 0; a < m_animStartFrame.size(); ++a )
+         {
+            if ( strncasecmp( animNames[a].c_str(), "head_", 5 ) != 0 )
+               continue;
+            if ( m_animStartFrame[a] >= animOffset )
+               m_animStartFrame[a] -= animOffset;
+         }
+         
+         if ( m_headFrame >= animOffset )
+            m_headFrame -= animOffset;
       }
       return true;
    }
@@ -1413,36 +1732,216 @@ void Md3Filter::setPoints( MeshSectionE section, int32_t offsetTags, int32_t num
    return;
 }
 
-int Md3Filter::animToFrame( MeshSectionE section, int anim, int frame )
+#ifdef MDR_LOAD
+void Md3Filter::MDRsetBoneJoints(MeshSectionE section, bool compressed, int32_t offsetFrames, int32_t numFrames,
+   int32_t numBones, int32_t offsetTags, int32_t numTags, int32_t parentTag, int32_t animIndex)
 {
-   if ( anim < 0 )
+   log_enable_debug(true);
+   Matrix loadMatrix;
+
+   loadMatrix.setRotationInDegrees( -90, -90, 0 );
+   double pos[3] = { 0,0,0 };
+   double rot[3] = { 0,0,0 };
+   int *jointIndex;
+
+   if ( parentTag >= 0 )
    {
-      // Not an animation, use 'default' frame
-      switch ( section )
-      {
-         case MS_Lower:
-            return m_idleFrame;
-            break;
-         case MS_Upper:
-            return m_standFrame;
-            break;
-         default:
-            break;
-      }
-      return 0;
+      m_model->getPointCoords( parentTag, pos );
+      m_model->getPointOrientation( parentTag, rot );
+
+      loadMatrix.loadIdentity();
+      loadMatrix.setRotation( rot );
+      loadMatrix.setTranslation( pos[0], pos[1], pos[2] );
    }
 
-   if ( !animInSection( getSafeName( anim ), section ) )
+   jointIndex = new int[numBones];
+
+   char bonePrefix[32];
+   switch (section)
+   {
+      case MS_None:
+      default:
+         snprintf(bonePrefix, sizeof (bonePrefix), "joint");
+         break;
+      case MS_Lower:
+         snprintf(bonePrefix, sizeof (bonePrefix), "l_joint");
+         break;
+      case MS_Upper:
+         snprintf(bonePrefix, sizeof (bonePrefix), "u_joint");
+         break;
+      case MS_Head:
+         snprintf(bonePrefix, sizeof (bonePrefix), "h_joint");
+         break;
+   }
+
+   // Add bone joints (There is no bone parent or name saved in the model...)
+   for (int i = 0; i < numBones; i++)
+   {
+      char boneName[32];
+      snprintf(boneName, sizeof (boneName), "%s%d", bonePrefix, i);
+      jointIndex[i] = m_model->addBoneJoint( boneName, 0, 0, 0, 0, 0, 0, -1 );
+   }
+
+   int frameSize;
+   int frameSkip;
+
+   if (compressed) {
+      frameSize = (MDR_COMP_FRAME_SIZE + numBones * MDR_COMP_BONE_SIZE);
+      frameSkip = (4 * 3 * 2) + (4 * 3) + 4;
+   } else {
+      frameSize = (MDR_FRAME_SIZE + numBones * MDR_BONE_SIZE);
+      frameSkip = (4 * 3 * 2) + (4 * 3) + 4 + 16;
+   }
+
+   int animCount = m_model->getAnimCount( Model::ANIMMODE_SKELETAL );
+   //if ( animIndex < 0 )
+   //{
+   //   animCount = 0;
+   //}
+
+   // Set bone joint pos and rot for each frame
+   for (int animIndex = 0; animIndex < animCount; animIndex++)
+   {
+      int frameCount = m_model->getAnimFrameCount( Model::ANIMMODE_SKELETAL, animIndex );
+      //if ( animIndex < 0 )
+      //{
+      //   frameCount = 1;
+      //}
+
+      for (int f = 0; frameCount; f++)
+      {
+         int fileFrame = animToFrame( section, animIndex, f );
+         //if ( animIndex < 0 )
+         //{
+         //   log_debug( "Using frame %d as default for tag section %d\n", fileFrame, section );
+         //}
+         if ( fileFrame >= numFrames )
+         {
+            log_error( "tag section appears to be missing frame %d for anim %d, using frame %d instead\n", fileFrame, animIndex, numFrames - 1 );
+            fileFrame = numFrames - 1;
+         }
+
+         m_src->seek( offsetFrames + (fileFrame * frameSize) + frameSkip );
+
+         for (int bone = 0; bone < numBones; bone++)
+         {
+            // Read bone info
+            float mat[3][4];
+
+            if (compressed) {
+               int16_t data[12];
+
+               for (int i = 0; i < 12; i++)
+               {
+                  data[i] = m_src->readI16();
+               }
+               MC_UnCompress(mat, (unsigned char*)data);
+            }
+            else
+            {
+               // orientation and origin
+               for ( int m = 0; m < 3; m++ )
+               {
+                  for ( int n = 0; n < 4; n++ )
+                  {
+                     mat[m][n] = m_src->readF32();
+                  }
+               }
+            }
+
+            Matrix matrix;
+
+            for ( int m = 0; m < 3; m++ )
+            {
+               for ( int n = 0; n < 3; n++ )
+               {
+                  matrix.set(m, n, mat[m][n]);
+               }
+            }
+
+            int boneIndex = jointIndex[bone]; // Remap bone
+            double trans[3] = {mat[0][3], mat[1][3], mat[2][3]};
+            m_model->setSkelAnimKeyframe(animIndex, f, boneIndex, false, trans[0], trans[1], trans[2]);
+
+            double rot[3];
+            matrix.getRotation(rot[0], rot[1], rot[2]);
+            m_model->setSkelAnimKeyframe(animIndex, f, boneIndex, true, rot[0], rot[1], rot[2]);
+
+            /*if (animIndex == 0 && f == 15) // HACK
+            {
+               m_model->setBoneJointRotation(boneIndex, rot);
+               m_model->setBoneJointTranslation(boneIndex, trans);
+               log_debug("Anim%d Frame%d joint(%d) origin=%f %f %f\n", animIndex, f, boneIndex, trans[0], trans[1], trans[2]);
+            }*/
+         }
+      }
+   }
+
+   // ZTM: FIXME: Should 'm_model->setupJoints();' be run here?
+
+   m_src->seek( offsetTags );
+
+   for (int tag = 0; tag < numTags; tag++)
+   {
+      //m_src->seek( offsetTags + (tag * MDR_TAG_SIZE) );
+
+      int32_t boneJointIndex = m_src->readI32();
+
+      if (boneJointIndex >= 0 && boneJointIndex < numBones)
+         boneJointIndex = jointIndex[boneJointIndex];
+      else {
+         log_debug("tag has invalid section-joint %d, skipping\n", boneJointIndex);
+         continue;
+      }
+
+      char tagName[32];
+      readString( tagName, sizeof( tagName ) );
+
+      // Only add the point if we don't already have one of the same name
+      int p = m_model->getPointByName( tagName );
+      if ( p < 0 )
+      {
+         // ZTM: FIXME: Set posVector and rotVector to the same as the bone?
+         // ZTM: FIXME: Does the exporter save the the correct rot vector for the tag in the bone?
+         double posVector[3] = {0,0,0};
+         double rotVector[3] = {0,0,0};
+         m_model->getSkelAnimKeyframe( 0, 0, boneJointIndex, false, posVector[0], posVector[1], posVector[2] );
+         m_model->getSkelAnimKeyframe( 0, 0, boneJointIndex, true, rotVector[0], rotVector[1], rotVector[2] );
+
+         p = m_model->addPoint( tagName, posVector[0], posVector[1], posVector[2],
+               rotVector[0], rotVector[1], rotVector[2], boneJointIndex );
+
+         if (p < 0)
+            log_debug("tag %s returned error %d, section-joint %d\n", tagName, p, boneJointIndex);
+         else {
+            log_debug("tag %d %s is attached to section-joint %d\n", p, tagName, boneJointIndex);
+            m_model->setPointBoneJoint(p, boneJointIndex);
+         }
+      }
+      else
+      {
+         log_debug("duplicate tag %s found, ignoring\n", tagName);
+      }
+   }
+
+   delete[] jointIndex;
+   log_enable_debug(false);
+}
+#endif
+
+int Md3Filter::animToFrame( MeshSectionE section, int anim, int frame )
+{
+   if ( anim < 0 || !animInSection( getSafeName( anim ), section ) )
    {
       // Not valid for this section, use 'default' frame
       switch ( section )
       {
          case MS_Lower:
             return m_idleFrame;
-            break;
          case MS_Upper:
             return m_standFrame;
-            break;
+         case MS_Head:
+            return m_headFrame;
          default:
             break;
       }
@@ -1459,28 +1958,20 @@ int Md3Filter::animToFrame( MeshSectionE section, int anim, int frame )
    switch ( section )
    {
       case MS_None:
+      default:
          // Not a multi-MD3 model, use specified frame
          return frame;
 
       case MS_Lower:
       case MS_Upper:
-         return fileFrame;
-
       case MS_Head:
-      default:
-         // No head animations, use first frame
-         return 0;
+         return fileFrame;
    }
    return frame;
 }
 
 bool Md3Filter::animInSection( std::string animName, MeshSectionE section )
 {
-   if ( section == MS_Head )
-   {
-      return false;
-   }
-
    if ( section == MS_None )
    {
       // Uh... sure...
@@ -1502,11 +1993,30 @@ bool Md3Filter::animInSection( std::string animName, MeshSectionE section )
          return false;
    }
 
+   if ( strncasecmp( animName.c_str(), "head_", 5 ) == 0 )
+   {
+      if ( section == MS_Head )
+         return true;
+      else
+         return false;
+   }
+
    // It's a "both_" animation, or something weird
    if ( strncasecmp( animName.c_str(), "both_", 5 ) == 0 )
+   {
+      if ( section == MS_Lower || section == MS_Upper )
+         return true;
+      else
+         return false;
+   }
+
+   if ( strncasecmp( animName.c_str(), "all_", 4 ) == 0 )
+   {
+      // Animation for torso, legs, and head!
       return true;
-   else
-      return false;
+   }
+
+   return false;
 }
 
 bool Md3Filter::groupInSection( std::string groupName, MeshSectionE section )
@@ -1547,6 +2057,28 @@ bool Md3Filter::groupInSection( std::string groupName, MeshSectionE section )
    return false;
 }
 
+#ifdef MDR_EXPORT
+bool Md3Filter::boneJointInSection( std::string jointName, MeshSectionE section )
+{
+   if ( groupInSection(jointName, section) )
+   {
+      // not a player model or specificly defined as part of this section
+      return true;
+   }
+
+   if ( strncasecmp( jointName.c_str(), "joint_tag", 9) == 0 )
+   {
+      return tagInSection(&jointName[6], section);
+   }
+   if ( strcasecmp( jointName.c_str(), "root_joint") == 0 )
+   {
+      return (section == MS_Lower);
+   }
+
+   return false;
+}
+#endif
+
 bool Md3Filter::tagInSection( std::string tagName, MeshSectionE section )
 {
    if ( section == MS_None )
@@ -1569,12 +2101,30 @@ bool Md3Filter::tagInSection( std::string tagName, MeshSectionE section )
          return true;
       }
    }
-   else if ( strcasecmp( tagName.c_str(), "tag_weapon" ) == 0 )
+   else if ( strcasecmp( tagName.c_str(), "tag_weapon" ) == 0
+      // ZTM: FIXME: Game specific
+      // Support Team Arena tag point
+      || strcasecmp( tagName.c_str(), "tag_flag" ) == 0
+#ifdef TURTLE_ARENA // New tags for Turtle Arena
+      || strcasecmp( tagName.c_str(), "tag_hand_primary" ) == 0
+      || strcasecmp( tagName.c_str(), "tag_hand_secondary" ) == 0
+      || strcasecmp( tagName.c_str(), "tag_wp_away_primary" ) == 0
+      || strcasecmp( tagName.c_str(), "tag_wp_away_secondary" ) == 0
+#endif
+      )
    {
       if ( section == MS_Upper )
       {
          return true;
       }
+   }
+   else
+   {
+      // Support unknown tags. Mods can add new tags.
+      //   Better to have unknown tag in all models then none.
+      // In Quake3 the programmer selects which section the tag is on,
+      //   so it should be harmless (Other then the larger file size in the models that don't use the tag...).
+      return true;
    }
 
    return false;
@@ -1614,9 +2164,9 @@ std::string Md3Filter::getSafeName( unsigned int anim )
 {
    std::string animName = "none";
 
-   if ( anim < m_model->getAnimCount( Model::ANIMMODE_FRAME ) )
+   if ( anim < m_model->getAnimCount( m_animationMode ) )
    {
-      animName = m_model->getAnimName( Model::ANIMMODE_FRAME, anim );
+      animName = m_model->getAnimName( m_animationMode, anim );
    }
 
    return animName;
@@ -1624,6 +2174,9 @@ std::string Md3Filter::getSafeName( unsigned int anim )
  
 Model::ModelErrorE Md3Filter::writeFile( Model * model, const char * const filename, ModelFilter::Options *  )
 {
+#ifdef MDR_EXPORT
+   log_enable_debug(true);
+#endif
    if ( model && filename && filename[0] )
    {
       unsigned tcount = model->getTriangleCount();
@@ -1682,7 +2235,11 @@ Model::ModelErrorE Md3Filter::writeFile( Model * model, const char * const filen
       if ( haveUpper && haveLower )
       {
          if (  m_model->getPointByName( "tag_torso" )  < 0
+#ifdef TURTLE_ARENA // Turtle Arena supports using tag_hand_primary as well as tag_weapon ...
+            || (m_model->getPointByName( "tag_weapon" ) < 0 && m_model->getPointByName( "tag_hand_primary" ) < 0)
+#else
             || m_model->getPointByName( "tag_weapon" ) < 0
+#endif
             || m_model->getPointByName( "tag_head" )   < 0 )
          {
             // missing required tags for player model
@@ -1713,8 +2270,20 @@ Model::ModelErrorE Md3Filter::writeFile( Model * model, const char * const filen
             }
             else
             {
-               // TODO: Eventually create a prompt instead of assuming "yes"
-               log_debug( "model is implicitly a composite (no composite meta tag)\n" );
+               char answer = msg_info_prompt( transll( QT_TRANSLATE_NOOP( "LowLevel", "This looks like a player model.\nDo you want to save all sections?")).c_str(), "Ync" );
+               if ( answer == 'Y' )
+               {
+                  model->addMetaData( "MD3_composite", "1" );
+               }
+               else if ( answer == 'N' )
+               {
+                  model->addMetaData( "MD3_composite", "0" );
+                  saveAsPlayer = false;
+               }
+               else
+               {
+                  return Model::ERROR_CANCEL;
+               }
             }
          }
          else
@@ -1730,7 +2299,29 @@ Model::ModelErrorE Md3Filter::writeFile( Model * model, const char * const filen
 
          std::string playerFile;
          std::string path = modelPath + "/";
+#ifdef MDR_EXPORT
+         if ( isMdr(modelBaseName.c_str()) )
+         {
+            playerFile = path + fixFileCase( m_modelPath.c_str(), "lower.mdr" );
+            writeSectionFile( playerFile.c_str(), MT_MDR, MS_Lower, meshes );
 
+            playerFile = path + fixFileCase( m_modelPath.c_str(), "upper.mdr" );
+            writeSectionFile( playerFile.c_str(), MT_MDR, MS_Upper, meshes );
+         }
+         else
+         {
+            playerFile = path + fixFileCase( m_modelPath.c_str(), "lower.md3" );
+            writeSectionFile( playerFile.c_str(), MT_MD3, MS_Lower, meshes );
+
+            playerFile = path + fixFileCase( m_modelPath.c_str(), "upper.md3" );
+            writeSectionFile( playerFile.c_str(), MT_MD3, MS_Upper, meshes );
+         }
+
+         playerFile = path + fixFileCase( m_modelPath.c_str(), "head.md3" );
+         writeSectionFile( playerFile.c_str(), MT_MD3, MS_Head,  meshes );
+
+         m_animationMode = animMode(isMdr(modelBaseName.c_str()) ? MT_MDR : MT_MD3);
+#else
          playerFile = path + fixFileCase( m_modelPath.c_str(), "lower.md3" );
          writeSectionFile( playerFile.c_str(), MS_Lower, meshes );
 
@@ -1739,15 +2330,26 @@ Model::ModelErrorE Md3Filter::writeFile( Model * model, const char * const filen
 
          playerFile = path + fixFileCase( m_modelPath.c_str(), "head.md3" );
          writeSectionFile( playerFile.c_str(), MS_Head,  meshes );
+#endif
 
          writeAnimations();
+
+#ifdef MDR_EXPORT
+         log_enable_debug(false);
+#endif
 
          return Model::ERROR_NONE;
       }
       else
       {
          log_debug( "saving as a single model\n" );
+#ifdef MDR_EXPORT
+         writeSectionFile( filename, isMdr(modelBaseName.c_str()) ? MT_MDR : MT_MD3, MS_None, meshes );
+         log_enable_debug(false);
+         return Model::ERROR_NONE;
+#else
          return writeSectionFile( filename, MS_None, meshes );
+#endif
       }
    }
    else
@@ -1757,11 +2359,21 @@ Model::ModelErrorE Md3Filter::writeFile( Model * model, const char * const filen
    }
 }
 
+#ifdef MDR_EXPORT
+Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter::MeshTypeE type,
+      Md3Filter::MeshSectionE section, MeshList & meshes )
+#else
 Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter::MeshSectionE section, MeshList & meshes )
+#endif
 {
    string modelPath = "";
    string modelBaseName = "";
    string modelFullName = "";
+#ifdef MDR_EXPORT
+   m_animationMode = animMode(type);
+#else
+   m_animationMode = Model::ANIMMODE_FRAME;
+#endif
 
    log_debug( "writing section file %s\n", filename );
    switch ( section )
@@ -1785,6 +2397,27 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
 
    normalizePath( filename, modelFullName, modelPath, modelBaseName );
 
+#ifdef MDR_EXPORT
+   int8_t magic[4];
+   int32_t version = 0;
+   if (type == MT_MDR)
+   {
+      //MDR HEADER
+      magic[0] = 'R';
+      magic[1] = 'D';
+      magic[2] = 'M';
+      magic[3] = '5';
+      version = MDR_VERSION;
+   }
+   else
+   {
+      magic[0] = 'I';
+      magic[1] = 'D';
+      magic[2] = 'P';
+      magic[3] = '3';
+      version = MD3_VERSION;
+   }
+#else
    //MD3 HEADER
    int8_t magic[4];
    magic[0] = 'I';
@@ -1792,6 +2425,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
    magic[2] = 'P';
    magic[3] = '3';
    int32_t version = MD3_VERSION;
+#endif
    char pk3Name[MAX_QPATH];
    std::string pk3Path = "";
    memset( pk3Name, 0, MAX_QPATH );
@@ -1813,15 +2447,17 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
 
    int32_t flags = 0;
    int32_t numFrames = 0;
+   int32_t numAnims = 0;
    //We are making all the anims be one anim.
-   unsigned animCount = m_model->getAnimCount( Model::ANIMMODE_FRAME );
+   unsigned animCount = m_model->getAnimCount( m_animationMode );
    for ( unsigned i = 0; i < animCount; i++ )
    {
       // Skip animations that don't belong in this section
       std::string name = getSafeName( i );
       if ( animInSection( name, section ) )
       {
-         numFrames += m_model->getAnimFrameCount( Model::ANIMMODE_FRAME, i );
+         numAnims++;
+         numFrames += m_model->getAnimFrameCount( m_animationMode, i );
       }
    }
 
@@ -1843,17 +2479,17 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
 
    unsigned pcount = m_model->getPointCount();
    int32_t numTags = (int32_t) pcount;
-   switch ( section )
+   // If spliting model, count tags.
+   if (section == MS_Head || section == MS_Lower || section == MS_Upper)
    {
-      case MS_Head:
-      case MS_Lower:
-         numTags = 1;
-         break;
-      case MS_Upper:
-         numTags = 3;
-         break;
-      default:
-         break;
+      numTags = 0;
+      for ( unsigned j = 0; j < pcount; j++ )
+      {
+         if ( tagInSection( m_model->getPointName( j ), section ) )
+         {
+            numTags++;
+         }
+      }
    }
 
    MeshList::iterator mlit;
@@ -1880,7 +2516,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
       }
    }
 
-   int32_t numSkins = 0;
+   int32_t numSkins = 0; // MD3
    if ( numTags > MD3_MAX_TAGS )
    {
       log_error( "Number of tags(%d) is larger than %d\n.\n", numTags, MD3_MAX_TAGS );
@@ -1894,10 +2530,81 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
       return Model::ERROR_FILTER_SPECIFIC;
    }
    // numSkins is usually zero for MD3 header, there can be skins for each mesh though later
-   int32_t offsetFrames = HEADER_SIZE;
-   int32_t offsetTags = offsetFrames + numFrames * FRAME_SIZE;
-   int32_t offsetMeshes = offsetTags + numFrames * numTags * TAG_SIZE;
+#ifdef MDR_EXPORT
+   int32_t numBones = 0; // MDR
+   int32_t offsetFrames = 0;
+   int32_t numLODs = 0; // MDR
+   int32_t offsetLODs = 0; // MDR
+   int32_t offsetTags = 0;
+   int32_t offsetMeshes = 0; // MD3
+   int32_t offsetEnd = 0;
+   bool compress = true; // MDR
+   unsigned bcount = 0; // MDR
+   unsigned bonesRemapM2S[1024]; // Remap MM3D's bone indexes to the local model
+   unsigned bonesRemapS2M[1024]; // Remap section bone indexes to the MM3D model
+                              // ZTM: FIXME: What should be max be? (ioquake3 defines MDR_MAX_BONES to 128, but never uses it)
+   if (type == MT_MDR)
+   {
+      char value[20];
+      if ( m_model->getMetaData( "MDR_compressed", value, sizeof( value ) ) )
+      {
+         if ( atoi( value ) == 0 )
+         {
+            log_debug( "model is explicitly not compressed\n" );
+            compress = false;
+         }
+         else if ( atoi( value ) == 1 )
+         {
+            log_debug( "model is explicitly compressed\n" );
+            compress = true;
+         }
+      }
+
+      bcount = m_model->getBoneJointCount();
+      memset(bonesRemapM2S, 0, sizeof (bonesRemapM2S));
+      memset(bonesRemapS2M, 0, sizeof (bonesRemapS2M));
+      if (section == MS_Head || section == MS_Lower || section == MS_Upper)
+      {
+         numBones = 0;
+         for ( unsigned j = 0; j < bcount; j++ )
+         {
+            if ( boneJointInSection( m_model->getBoneJointName( j ), section ) )
+            {
+               bonesRemapM2S[j] = numBones; // MM3D joint to section joint
+               bonesRemapS2M[numBones] = j; // section joint to MM3D joint
+               numBones++;
+            }
+         }
+      }
+      else
+      {
+         numBones = (int32_t) bcount;
+      }
+      log_debug("bones joints in section = %d, total bones joints = %d\n", numBones, bcount);
+
+      offsetFrames = MDR_HEADER_SIZE;
+      numLODs = 1;
+      if (compress)
+          offsetLODs = offsetFrames + numFrames * (MDR_COMP_FRAME_SIZE + numBones * MDR_COMP_BONE_SIZE);
+      else
+         offsetLODs = offsetFrames + numFrames * (MDR_FRAME_SIZE + numBones * MDR_BONE_SIZE);
+      offsetMeshes = offsetLODs + numLODs * MDR_LOD_SIZE; // First LOD's meshes
+      offsetTags = offsetMeshes; // Note: Plus size of meshes!
+      offsetEnd = offsetTags;
+   }
+   else
+   {
+      offsetFrames = MD3_HEADER_SIZE;
+      offsetTags = offsetFrames + numFrames * MD3_FRAME_SIZE;
+      offsetMeshes = offsetTags + numFrames * numTags * MD3_TAG_SIZE;
+      offsetEnd = offsetMeshes;
+   }
+#else
+   int32_t offsetFrames = MD3_HEADER_SIZE;
+   int32_t offsetTags = offsetFrames + numFrames * MD3_FRAME_SIZE;
+   int32_t offsetMeshes = offsetTags + numFrames * numTags * MD3_TAG_SIZE;
    int32_t offsetEnd = offsetMeshes;
+#endif
 
    // MD3 limit tests
    if ( numTris > MD3_MAX_TRIANGLES )
@@ -1922,6 +2629,29 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
       return err;
 
    // write file header
+#ifdef MDR_EXPORT
+   if (type == MT_MDR)
+   {
+      m_dst->write( magic[0] );
+      m_dst->write( magic[1] );
+      m_dst->write( magic[2] );
+      m_dst->write( magic[3] );
+      m_dst->write( version );
+      m_dst->writeBytes( (uint8_t*) pk3Name, MAX_QPATH );
+      m_dst->write( numFrames );
+      m_dst->write( numBones );
+      if (compress)
+         m_dst->write( -offsetFrames );
+      else
+         m_dst->write( offsetFrames );
+      m_dst->write( numLODs );
+      m_dst->write( offsetLODs );
+      m_dst->write( numTags );
+      m_dst->write( offsetTags );
+   }
+   else
+   {
+#endif
    m_dst->write( magic[0] );
    m_dst->write( magic[1] );
    m_dst->write( magic[2] );
@@ -1936,6 +2666,9 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
    m_dst->write( offsetFrames );
    m_dst->write( offsetTags );
    m_dst->write( offsetMeshes );
+#ifdef MDR_EXPORT
+   }
+#endif
 
    uint32_t endPos = m_dst->offset();
    m_dst->write( offsetEnd );
@@ -1959,17 +2692,30 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
    for ( a = 0; a < animCount; a++ )
    {
       if ( animInSection( getSafeName( a ), section ) 
-            || (section == MS_Head && a == 0) )
+            || (numAnims == 0 && a == 0) )
       {
-         unsigned aFrameCount = m_model->getAnimFrameCount( Model::ANIMMODE_FRAME, a );
+         unsigned aFrameCount = m_model->getAnimFrameCount( m_animationMode, a );
          if ( (aFrameCount == 0 && animCount == 1 )
-               || (section == MS_Head) )
+               || (numAnims == 0) )
          {
             aFrameCount = 1;
          }
+
+         if (m_animationMode == Model::ANIMMODE_SKELETAL)
+         {
+            // Set current animation, needed for some ANIMMODE_SKELETAL functions (search TIME_FUNC in this file)
+            m_model->setCurrentAnimation(m_animationMode, a);
+         }
+
          std::string animName = getSafeName( a );
          for ( unsigned t = 0; t < aFrameCount; t++ )
          {
+            if (m_animationMode == Model::ANIMMODE_SKELETAL)
+            {
+               // Set current animation frame, needed for some ANIMMODE_SKELETAL functions (search TIME_FUNC in this file)
+               m_model->setCurrentAnimationFrame(t);
+            }
+
             Matrix saveMatrix = getMatrixFromPoint( a, t, rootTag ).getInverse();
             list<int>::iterator vit;
             double dmax[4] = { DBL_MIN, DBL_MIN, DBL_MIN, 1 };
@@ -1987,7 +2733,10 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
                      {
                         int vertex = m_model->getTriangleVertex( *it, n );
                         double cords[3];
-                        m_model->getFrameAnimVertexCoords( a, t, vertex, cords[0], cords[1], cords[2] );
+                        if (m_animationMode == Model::ANIMMODE_SKELETAL)
+                           m_model->getVertexCoords(vertex, cords); // TIME_FUNC
+                        else
+                           m_model->getFrameAnimVertexCoords( a, t, vertex, cords[0], cords[1], cords[2] );
                         dmax[0] = greater( dmax[0], cords[0] );
                         dmax[1] = greater( dmax[1], cords[1] );
                         dmax[2] = greater( dmax[2], cords[2] );
@@ -2026,12 +2775,210 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
             }
             //log_debug( "Frame radius: %f\n", ( (float) radius ) );
             m_dst->write( (float) radius );
-            char name[16] = "MaverickModel3D"; // this is what other exporters do
+#ifdef MDR_EXPORT // Compressed MDRs don't save frame name
+            if (type != MT_MDR || (type == MT_MDR && !compress))
+            {
+#endif
+            char name[16] = "Misfit Model 3D"; // this is what other exporters do
             PORT_snprintf( name, sizeof(name), "%s%02d", animName.c_str(), t);
             m_dst->writeBytes( (uint8_t*) name, sizeof(name) );
+#ifdef MDR_EXPORT
+            }
+#endif
+
+#ifdef MDR_EXPORT
+            if (type == MT_MDR)
+            {
+               // Write MDR bones
+               for ( unsigned joint = 0; joint < bcount; joint++ )
+               {
+                  if ( !boneJointInSection( m_model->getBoneJointName( joint ), section ) )
+                     continue;
+
+                  Matrix rotMatrix;
+                  double rotVector[3] = { 0, 0, 0 };
+                  double origin[3] = { 0, 0, 0 };
+
+                  // Save the rotation of the point
+                  int point = -1;
+                  for (unsigned p = 0; p < pcount; p++)
+                  {
+                     if ( !tagInSection( m_model->getPointName( p ), section ) )
+                        continue;
+
+                     if (m_model->getPointBoneJoint(p) == (int)joint)
+                     {
+                        point = p;
+                        break;
+                     }
+                  }
+
+                  // ZTM: FIXME: Set correct bone origin and rotation (bone joint and 'bone point'?)
+                  if (point >= 0)
+                  {
+                     //Matrix invMatrix;
+                     //invMatrix.loadIdentity();
+
+                     if (t == 0) // only show first frame
+                        log_debug("boneJoint %d %s using point %d %s\n", joint, m_model->getBoneJointName( joint ), point, m_model->getPointName( point ));
+
+                     // Use rotation and origin from point
+                     m_model->getPointCoords( point, origin ); // TIME_FUNC
+                     m_model->getPointOrientation( point, rotVector ); // TIME_FUNC
+
+                     //invMatrix.setRotation( rotVector );
+                     //invMatrix.setTranslation( origin );
+
+                     //invMatrix = invMatrix.getInverse();
+
+                     //invMatrix.getRotation( rotVector );
+                     //invMatrix.getTranslation( origin );
+                  }
+                  else
+                  {
+#if 1
+                     //vector<Model::Joint *> jointList = getJointList( m_model );
+                     //rotVector[0] = jointList[joint]->m_localRotation[0];
+                     //rotVector[1] = jointList[joint]->m_localRotation[1];
+                     //rotVector[2] = jointList[joint]->m_localRotation[2];
+
+                     // ZTM: FIXME: Set rotVector (use getBoneVector?)
+                     //double coords[3] = {0,0,0};
+                     //m_model->getBoneVector( joint, rotVector, coords);
+
+                     // Works: m_model->getBoneJointCoords( joint, origin ); // TIME_FUNC
+
+                     Matrix fm;
+                     m_model->getBoneJointFinalMatrix( joint, fm ); // TIME_FUNC
+
+                     fm.getRotation( rotVector );
+                     fm.getTranslation( origin );
+#elif 1
+                     double spf = (1.0 / m_model->getAnimFPS( Model::ANIMMODE_SKELETAL, a ));
+                     unsigned int frameCount = m_model->getAnimFrameCount( Model::ANIMMODE_SKELETAL, a );
+                     double totalTime = spf * frameCount;
+                     double frameTime = (double) t / (double) frameCount
+                            * totalTime;
+
+                     // MM3D allows one type of keyframe without the other, Cal3D requires
+                     // both rotation and translation for each keyframe. If we have one
+                     // and the other is missing, we must do interpolation here.
+                     Matrix relativeFinal;
+                     bool m_animationLoop = m_model->getAnimationLooping( m_animationMode, a );
+                     m_model->interpSkelAnimKeyframeTime( a, frameTime, m_animationLoop, joint, relativeFinal );
+
+                     Matrix rm;
+                     //m_model->getBoneJointRelativeMatrix( joint, rm );
+                     m_model->getBoneJointFinalMatrix( joint, rm );
+                     //m_model->getBoneJointAbsoluteMatrix( joint, rm );
+
+                     Matrix final = relativeFinal * rm;
+
+                     final.getRotation( rotVector );
+                     final.getTranslation( origin );
+#else
+                     bool m_animationLoop = m_model->getAnimationLooping( m_animationMode, a );
+                     m_model->interpSkelAnimKeyframe( a, t, m_animationLoop, joint, true, rotVector[0], rotVector[1], rotVector[2] );
+
+                     // origin
+                     m_model->interpSkelAnimKeyframe( a, t, m_animationLoop, joint, false, origin[0], origin[1], origin[2] );
+#endif
+                  }
+
+                  saveMatrix.apply( origin );
+
+                  if (a == 5 && t == 15) // HACK
+                     log_debug("Anim%d Frame%d joint(%d) %s, origin=%f %f %f\n", a, t, joint, m_model->getBoneJointName( joint ), origin[0], origin[1], origin[2]);
+
+                  // Seems whenver we have a nan its from a identity matrix
+                  if ( rotVector[0] != rotVector[0] || rotVector[1] != rotVector[1] || rotVector[2] != rotVector[2] )
+                  {
+                     // writeIdentity();
+                     float z = 0.0;
+                     float o = 1.0;
+                     for ( int i = 0; i < 3; i++ )
+                     {
+                        for ( int j = 0; j < 3; j++ )
+                        {
+                           if ( i == j )
+                           {
+                              rotMatrix.set(i, j, o);
+                           }
+                           else
+                           {
+                              rotMatrix.set(i, j, z);
+                           }
+                        }
+                     }
+                  }
+                  else
+                  {
+                     rotMatrix.setRotation( rotVector );
+                     rotMatrix = rotMatrix*saveMatrix;
+                  }
+
+                  // Compress MDR bone matrix and origin!
+                  if (compress)
+                  {
+                     uint16_t data[12];
+                     float mat[3][4];
+
+                     for ( int m = 0; m < 3; m++ )
+                     {
+                        for ( int n = 0; n < 3; n++ )
+                        {
+                           mat[m][n] = (float)rotMatrix.get(m, n);
+                        }
+
+                        mat[m][3] = origin[m];
+
+                        if (origin[m] < -512 || origin[m] > 511)
+                        {
+                           m_model->setNoAnimation();
+                           // Can't compress, origin out of range
+                           log_error( "Compressed MDR Bone joint(%d) is out side bounds (valid range is -512 to 511).\n", joint );
+                           m_model->setFilterSpecificError( transll( QT_TRANSLATE_NOOP( "LowLevel", "Compressed MDR Bone joint origin out of range (valid range is -512 to 511)." ) ).c_str() );
+                           return Model::ERROR_FILTER_SPECIFIC;
+                        }
+                     }
+
+                     MC_Compress(mat, (unsigned char*)data);
+
+                     for (int i = 0; i < 12; i++)
+                     {
+                        m_dst->write( (uint16_t )data[i] );
+                     }
+                  }
+                  else
+                  {
+                     // orientation and origin
+                     for ( int m = 0; m < 3; m++ )
+                     {
+                        for ( int n = 0; n < 3; n++ )
+                        {
+                           m_dst->write( (float) rotMatrix.get( m, n ) );
+                        }
+
+                        m_dst->write( (float) origin[m] );
+                     }
+                  }
+               }
+            }
+#endif
          }
       }
    }
+
+   m_model->setNoAnimation();
+
+#ifdef MDR_EXPORT
+   if (type == MT_MDR)
+   {
+      // Tags in MDR are done later.
+   }
+   else // MT_MD3
+   {
+#endif
 
    //TAGS
    log_debug( "writing tags at %d/%d\n", offsetTags, m_dst->offset() );
@@ -2039,11 +2986,11 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
    for ( a = 0; a < animCount; a++ )
    {
       if ( animInSection( getSafeName( a ), section ) 
-            || (section == MS_Head && a == 0) )
+            || (numAnims == 0 && a == 0) )
       {
          unsigned aFrameCount = m_model->getAnimFrameCount( Model::ANIMMODE_FRAME, a );
          if ( (aFrameCount == 0 && animCount == 1)
-               || (section == MS_Head) )
+               || (numAnims == 0) )
          {
             aFrameCount = 1;
          }
@@ -2100,9 +3047,320 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
          }
       }
    }
+#ifdef MDR_EXPORT
+   }
+#endif
 
    vector<Model::Material *> & modelMaterials = getMaterialList( m_model );
 
+#ifdef MDR_EXPORT
+   if (type == MT_MDR)
+   {
+      // Write MDR LODs
+      log_debug( "writing LODs at %d/%d\n", offsetLODs, m_dst->offset() );
+#if 1
+      int32_t lodEndPos;
+      int32_t offsetEndLod = 0;
+
+      // Write LODs
+      for (int i = 0; i < numLODs; i++)
+      {
+         m_dst->write( (int32_t) numMeshes );
+         m_dst->write( (int32_t) MDR_LOD_SIZE ); // offset of the first mesh from this LOD
+         lodEndPos = m_dst->offset();
+         m_dst->write( (int32_t) offsetEndLod ); // offset of the next LOD from this LOD
+
+         for ( mlit = meshes.begin(); mlit != meshes.end(); mlit++ )
+         {
+            if ( (*mlit).group >= 0 && groupInSection( m_model->getGroupName( (*mlit).group ), section )
+               /* && groupInLOD( (*mlit).group ), i ) */)
+            {
+               log_debug( "writing mdr mesh header at %d\n", m_dst->offset() );
+
+               Mesh::VertexList::iterator vit;
+
+               // MESH HEADER
+               int8_t mMagic[4];
+               mMagic[0] = 'R';
+               mMagic[1] = 'D';
+               mMagic[2] = 'M';
+               mMagic[3] = '5';
+               char mName[MAX_QPATH];
+               memset( mName, 0, MAX_QPATH );
+               if ( PORT_snprintf( mName, sizeof( mName ), "%s", m_model->getGroupName( (*mlit).group ) ) > MAX_QPATH )
+               {
+                  log_error( "group name is too large\n" );
+                  m_model->setFilterSpecificError( transll( QT_TRANSLATE_NOOP( "LowLevel", "Group name is too large for MD3 export." ) ).c_str() );
+                  return Model::ERROR_FILTER_SPECIFIC;
+               }
+
+               const int TRI_SIZE = 3 * 4;
+               const int VERT_SIZE = 3 * 4 + 2 * 4 + 4; // Plus x * BONE_WEIGHT_SIZE
+               const int BONE_REF_SIZE = 4;
+               const int BONE_WEIGHT_SIZE = 4 * 5;
+
+               int32_t mNumVerts    = (*mlit).vertices.size();
+               int32_t mNumTris     = (*mlit).faces.size();
+               int32_t mNumBoneRefs = 0; // (unused by ioquake3)
+               int32_t mOffHeader   = 0-(m_dst->offset()); // this will be a negative number (unused by ioquake3)
+               int32_t mOffTris     = (10 * 4) + MAX_QPATH + MAX_QPATH; // size of mesh header
+               int32_t mOffVerts    = mOffTris + mNumTris * TRI_SIZE;
+               int32_t mOffBoneRefs = mOffVerts + mNumVerts * VERT_SIZE; // (unused by ioquake3)
+
+               // Add mdrWeight_t for each bone ref in vertex
+               for ( vit = (*mlit).vertices.begin(); vit != (*mlit).vertices.end(); vit++ )
+               {
+                  Model::InfluenceList ilist;
+
+                  m_model->getVertexInfluences( (*vit).v, ilist );
+
+                  mOffBoneRefs += ilist.size() * BONE_WEIGHT_SIZE;
+               }
+
+               int32_t mOffEnd      = mOffBoneRefs + mNumBoneRefs * BONE_REF_SIZE;
+
+               // write header
+               m_dst->write( mMagic[0] );
+               m_dst->write( mMagic[1] );
+               m_dst->write( mMagic[2] );
+               m_dst->write( mMagic[3] );
+               m_dst->writeBytes( (uint8_t*) mName, MAX_QPATH );
+               // SHADER
+               {
+                  int matId = m_model->getGroupTextureId( (*mlit).group );
+                  string matFileName;
+                  string matFullName;
+                  string matPath;
+                  string matBaseName;
+                  if ( matId != -1 )
+                  {
+                     Model::Material * mat = modelMaterials[matId];
+                     matFileName = mat->m_filename;
+                  }
+                  else
+                  {
+                     //Texture isn't set
+                     matFileName = mName;
+                     matFileName += ".tga";
+                  }
+
+                  char sName[MAX_QPATH];
+                  std::string spk3Path;
+                  memset( sName, 0, MAX_QPATH );
+
+                  if ( matId >= 0 )
+                  {
+                     spk3Path = materialToPath( matId );
+                     if ( !spk3Path.empty() 
+                           && spk3Path[spk3Path.size() - 1] != '/' 
+                           && spk3Path.size() < ( MAX_QPATH+1 ) )
+                     {
+                        spk3Path += "/";
+                     }
+                  }
+
+                  normalizePath( matFileName.c_str(), matFullName, matPath, matBaseName );
+
+                  log_debug( "comparing %s and %s\n", matFullName.c_str(), m_modelPath.c_str() );
+                  if ( strncmp( matFullName.c_str(), m_modelPath.c_str(), m_modelPath.size() ) == 0)
+                  {
+                     log_debug( "path is common, using MD3_PATH\n" );
+                     // model path is the same as texture file path, remove model
+                     // path and prepend MD3_PATH
+                     if ( PORT_snprintf( sName, sizeof( sName ), "%s%s",
+                              spk3Path.c_str(), matBaseName.c_str() ) >= MAX_QPATH )
+                     {
+                        log_error( "MD3_PATH+texture_filename is to long.\n" );
+                        m_model->setFilterSpecificError( transll( QT_TRANSLATE_NOOP( "LowLevel", "Texture filename is too long." ) ).c_str() );
+                        return Model::ERROR_FILTER_SPECIFIC;
+                     }
+                  }
+                  else if ( pathIsAbsolute( matFileName.c_str() ) )
+                  {
+                     log_debug( "path is not common, but is absolute\n" );
+                     // model path is not the same as texture file path, try to
+                     // remove pk3 path from model and try again
+                     std::string common;
+                     common = m_modelPath;
+
+                     // default to PK3 Path
+                     PORT_snprintf( sName, sizeof( sName ), "%s%s",
+                           spk3Path.c_str(), matBaseName.c_str() );
+                  }
+                  else
+                  {
+                     log_debug( "path is relative, using as-is\n" );
+                     // relative path... sounds like a fallback, just use 
+                     // matFileName as is
+                     PORT_snprintf( sName, sizeof(sName), "%s", matFileName.c_str() );
+                  }
+                  log_debug( "writing texture path: %s\n", sName );
+
+                  m_dst->writeBytes( (uint8_t*) sName, MAX_QPATH );
+                  m_dst->write( (int32_t)0 ); // shaderIndex - for ingame use
+               }
+               m_dst->write( mOffHeader ); 
+               m_dst->write( mNumVerts );
+               m_dst->write( mOffVerts );
+               m_dst->write( mNumTris );
+               m_dst->write( mOffTris );
+               m_dst->write( mNumBoneRefs );
+               m_dst->write( mOffBoneRefs );
+               m_dst->write( mOffEnd );
+
+               // TRIANGLES (Same as MD3)
+               Mesh::FaceList::iterator fit;
+               for ( fit = (*mlit).faces.begin(); fit != (*mlit).faces.end(); fit++ )
+               {
+                  for ( int j = 2; j >= 0; j-- )
+                  {
+                     m_dst->write( (*fit).v[j] );
+                  }
+               }
+
+               // VERTEX
+               Matrix saveMatrix = getMatrixFromPoint( -1, -1, rootTag ).getInverse();
+
+               m_model->calculateNormals();
+
+               for ( vit = (*mlit).vertices.begin(); vit != (*mlit).vertices.end(); vit++ )
+               {
+                  double meshVec[4] = {0,0,0,1};
+                  double meshNor[4] = {0,0,0,1};
+
+                  m_model->getVertexCoords( (*vit).v, meshVec );
+
+                  // NORMAL
+                  float meshNorF[3];
+                  if ( getVertexNormal( m_model, (*mlit).group, (*vit).v, meshNorF ) )
+                  {
+                      meshNor[0] = meshNorF[0];
+                      meshNor[1] = meshNorF[1];
+                      meshNor[2] = meshNorF[2];
+                  }
+
+                  saveMatrix.apply( meshVec );
+                  saveMatrix.apply( meshNor );
+
+                  m_dst->write( (float) meshNor[0] );
+                  m_dst->write( (float) meshNor[1] );
+                  m_dst->write( (float) meshNor[2] );
+
+                  // TEXT COORDS
+                  m_dst->write( (*vit).uv[0] );
+                  m_dst->write( (float) (1.0f - (*vit).uv[1]) );
+
+                  // WEIGHTS
+                  Model::InfluenceList ilist;
+                  Model::InfluenceList::iterator it;
+
+                  m_model->getVertexInfluences( (*vit).v, ilist );
+
+                  int32_t numWeights = ilist.size();
+                  m_dst->write( numWeights );
+
+                  // Our weights don't always equal 100%, get total weigth so we can normalize
+                  double totalWeight = 0.0;
+                  for ( it = ilist.begin(); it != ilist.end(); it++ )
+                  {
+                     totalWeight += (*it).m_weight;
+                  }
+
+                  // Don't allow negative weights, or divide by zero
+                  if ( totalWeight < 0.0005 )
+                  {
+                     totalWeight = 1.0;
+                  }
+
+                  // ZTM: FIXME: I have no idea if this is right
+                  for ( it = ilist.begin(); it != ilist.end(); it++ )
+                  {
+                     float32_t     boneWeight = ((*it).m_weight / totalWeight);
+                     float     offset[3] = {0.0f, 0.0f, 0.0f};
+                     // MD4: offset gives the direction vector of the weight's influence.
+
+                     Matrix rotMatrix;
+                     Vector forward, right, up;
+
+                     m_model->getBoneJointAbsoluteMatrix((*it).m_boneId, rotMatrix);
+                     rotMatrix = rotMatrix*saveMatrix; // FIXME?: Should be 'bone.transform as matrix3'
+                     //rotMatrix.setTranslation(0,0,0);
+
+                     forward[0] = rotMatrix.get(0,0);
+                     forward[1] = rotMatrix.get(0,1);
+                     forward[2] = rotMatrix.get(0,2);
+
+                     right[0] = rotMatrix.get(1,0);
+                     right[1] = rotMatrix.get(1,1);
+                     right[2] = rotMatrix.get(1,2);
+
+                     up[0] = rotMatrix.get(2,0);
+                     up[1] = rotMatrix.get(2,1);
+                     up[2] = rotMatrix.get(2,2);
+
+#if 1
+                     rotMatrix.inverseTranslateVector(meshVec);
+
+                     Vector offsetVec;
+                     offsetVec.setAll(meshVec);
+#else
+                     Matrix InvMatrix;
+                     Vector offsetVec;
+
+                     InvMatrix = rotMatrix.getInverse();
+                     offsetVec.setAll(meshVec);
+                     offsetVec.transform3(InvMatrix);
+#endif
+
+                     offset[0] = offsetVec[0] * forward.mag3();
+                     offset[1] = offsetVec[1] * right.mag3();
+                     offset[2] = offsetVec[2] * up.mag3();
+
+                     //log_debug("offset=%f,%f,%f\n", offset[0], offset[1], offset[2]);
+
+                     m_dst->write( (int32_t) bonesRemapM2S[(*it).m_boneId] );
+                     m_dst->write( boneWeight );
+                     m_dst->write( offset[0] );
+                     m_dst->write( offset[1] );
+                     m_dst->write( offset[2] );
+                  }
+               }
+            }
+         }
+
+         // Go fix offsetEndLod
+         offsetEndLod = m_dst->offset() - offsetLODs;
+         m_dst->seek( lodEndPos );
+         m_dst->write( offsetEndLod );
+         m_dst->seek( (offsetLODs+offsetEndLod) );
+
+         offsetLODs = offsetEndLod; // for next LOD
+      }
+
+      // ZTM: TODO: Should offsetTags be set at the begining?
+      // Add size of meshes
+      offsetTags += m_dst->offset() - offsetMeshes;
+
+      // Go back and fix offsetTags
+      uint32_t tagPos = endPos-4;
+      m_dst->seek( tagPos );
+      m_dst->write( offsetTags );
+
+      // Now go write the tags!
+      m_dst->seek( offsetTags );
+#else // Below is what needs to be done.
+      //for each LOD
+         // write the number of surfaces (Meshes) (numSurfaces),
+         // offset of the first surfaces (Meshes) (offsetSurfaces),
+         // and the offset of the next LOD (offsetEnd)
+
+         // Write surface (Mesh)
+      // end LODs
+#endif
+   }
+   else // MT_MD3
+   {
+#endif
    // MESHES
    log_debug( "writing meshes at %d/%d\n", offsetMeshes, m_dst->offset() );
 
@@ -2135,7 +3393,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
          int32_t mNumShaders  = 1;
          int32_t mNumVerts    = (*mlit).vertices.size();
          int32_t mNumTris     = (*mlit).faces.size();
-         int32_t mOffTris     = HEADER_SIZE;
+         int32_t mOffTris     = MD3_HEADER_SIZE;
          int32_t mOffShaders  = mOffTris + mNumTris * TRI_SIZE;
          int32_t mOffST       = mOffShaders + mNumShaders * SHADER_SIZE;
          int32_t mOffVerts    = mOffST + mNumVerts * TEXCOORD_SIZE;
@@ -2258,7 +3516,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
          for ( unsigned a = 0; a < animCount; a++ )
          {
             if ( animInSection( getSafeName( a ), section ) 
-                  || (section == MS_Head && a == 0) )
+                  || (numAnims == 0 && a == 0) )
             {
                // If there are no anims calculateFrameNormals will segfault
                // (in earlier versions of MM3D)
@@ -2268,17 +3526,21 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
                }
                unsigned aFrameCount = m_model->getAnimFrameCount( Model::ANIMMODE_FRAME, a );
                if ( (aFrameCount == 0 && animCount == 1) 
-                     || (section == MS_Head) )
+                     || (numAnims == 0) )
                {
                   aFrameCount = 1;
                }
                for ( unsigned t = 0; t < aFrameCount; t++ )
                {
-                  Matrix saveMatrix = getMatrixFromPoint( a, t, rootTag ).getInverse();
+                  Matrix saveMatrix;
 
-                  if ( section == MS_Head )
+                  if ( numAnims == 0 )
                   {
                      saveMatrix = getMatrixFromPoint( -1, -1, rootTag ).getInverse();
+                  }
+                  else
+                  {
+                     saveMatrix = getMatrixFromPoint( a, t, rootTag ).getInverse();
                   }
 
                   for ( vit = (*mlit).vertices.begin(); vit != (*mlit).vertices.end(); vit++ )
@@ -2286,7 +3548,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
                      double meshVec[4] = {0,0,0,1};
                      double meshNor[4] = {0,0,0,1};
 
-                     if ( section == MS_Head )
+                     if ( numAnims == 0 )
                      {
                         // force unanimated coordinates for head
                         m_model->getVertexCoords( (*vit).v, meshVec );
@@ -2345,6 +3607,42 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
          }
       }
    }
+#ifdef MDR_EXPORT
+   }
+
+   if (type == MT_MDR)
+   {
+      //TAGS
+      log_debug( "writing tags at %d/%d\n", offsetTags, m_dst->offset() );
+
+      // Tags in MDR are simple (bone index and name)
+      for ( unsigned j = 0; j < pcount; j++ )
+      {
+         if ( tagInSection( m_model->getPointName( j ), section ) )
+         {
+            // Get and write MDR bone joint index
+            int32_t boneIndex = bonesRemapM2S[m_model->getPointBoneJoint(j)];
+            m_dst->write(boneIndex);
+
+            char tName[32];
+            memset( tName, 0, sizeof( tName ) );
+            if ( PORT_snprintf( tName, sizeof( tName ), "%s", m_model->getPointName( j ) ) >= (int)sizeof( tName ) )
+            {
+               log_error( "Point name is to long.\n" );
+               m_model->setFilterSpecificError( transll( QT_TRANSLATE_NOOP( "LowLevel", "Point name is too long." ) ).c_str() );
+               return Model::ERROR_FILTER_SPECIFIC;
+            }
+            m_dst->writeBytes( (uint8_t*) tName, sizeof( tName ) );
+
+            log_debug("tag %d %s is attached to section-joint %d %s\n", j, tName, boneIndex, m_model->getBoneJointName(bonesRemapS2M[boneIndex]));
+         }
+      }
+   }
+   else // MT_MD3
+   {
+      // Tags are done already.
+   }
+#endif
 
    offsetEnd = m_dst->offset();
    m_dst->seek( endPos );
@@ -2353,37 +3651,85 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
    return Model::ERROR_NONE;
 }
 
+bool Md3Filter::animSyncWarning(std::string name)
+{
+   char value[20];
+
+   if ( m_model->getMetaData( "MD3_NoSyncWarning", value, sizeof(value) ) )
+   {
+      if ( atoi( value ) == 1 )
+         return false;
+   }
+
+   for (unsigned i = 0; s_animSyncWarning[i] != NULL; i++)
+   {
+      if (strncasecmp(s_animSyncWarning[i], name.c_str(), name.length()) == 0)
+      {
+         return true;
+      }
+   }
+   return false;
+}
+
 bool Md3Filter::writeAnimations()
 {
    string animFile = m_modelPath + "/animation.cfg";
    FILE * fp = fopen( animFile.c_str(), "w" );
+   bool eliteLoop = false;
+   bool animKeyword = false;
 
    if ( fp != NULL )
    {
       log_debug( "writing animation.cfg\n" );
 
-      fprintf( fp, "// animation config file\r\n\r\n" );
+      fprintf( fp, "// animation config file\r\n" );
 
-      char value[30];
-      if ( m_model->getMetaData( "MD3_sex", value, sizeof(value) ) )
+      bool hadKeyword = false;
+      char keyword[1024], value[1024];
+
+      for (unsigned int i = 0; i < m_model->getMetaDataCount(); i++)
       {
-         fprintf( fp, "sex %s\r\n", value );
-      }
-      if ( m_model->getMetaData( "MD3_footsteps", value, sizeof(value) ) )
-      {
-         fprintf( fp, "footsteps %s\r\n", value );
-      }
-      if ( m_model->getMetaData( "MD3_headoffset", value, sizeof(value) ) )
-      {
-         fprintf( fp, "headoffset %s\r\n", value );
-      }
-      if ( m_model->getMetaData( "MD3_fixedtorso", value, sizeof(value) ) )
-      {
-         fprintf( fp, "fixedtorso %s\r\n", value );
-      }
-      if ( m_model->getMetaData( "MD3_fixedlegs", value, sizeof(value) ) )
-      {
-         fprintf( fp, "fixedlegs %s\r\n", value );
+         if (!m_model->getMetaData(i, keyword, sizeof (keyword), value, sizeof (value)))
+            continue;
+
+         if (strncasecmp(keyword, "MD3_CFG_", 8) == 0)
+         {
+            if (!hadKeyword)
+            {
+               hadKeyword = true;
+               fprintf( fp, "\r\n" );
+            }
+            if (strlen(value) > 0)
+               fprintf( fp, "%s %s\r\n", &keyword[8], value );
+            else
+               fprintf( fp, "%s\r\n", &keyword[8] );
+         }
+         // Support old keywords
+         else if (strncasecmp(keyword, "MD3_sex", 7) == 0
+           || strncasecmp(keyword, "MD3_footsteps", 13) == 0
+           || strncasecmp(keyword, "MD3_headoffset", 14) == 0
+           || strncasecmp(keyword, "MD3_fixedtorso", 14) == 0
+           || strncasecmp(keyword, "MD3_fixedlegs", 13) == 0)
+         {
+            if (!hadKeyword)
+            {
+               hadKeyword = true;
+               fprintf( fp, "\r\n" );
+            }
+            if (strlen(value) > 0)
+               fprintf( fp, "%s %s\r\n", &keyword[4], value );
+            else
+               fprintf( fp, "%s\r\n", &keyword[4] );
+         }
+         // animations.cfg format settings
+         else if (strncasecmp(keyword, "MD3_EliteLoop", 13) == 0)
+         {
+            eliteLoop = (atoi(value) > 0);
+         }
+         else if (strncasecmp(keyword, "MD3_AnimKeyword", 15) == 0)
+         {
+            animKeyword = (atoi(value) > 0);
+         }
       }
 
       fprintf( fp, "\r\n" );
@@ -2392,33 +3738,75 @@ bool Md3Filter::writeAnimations()
       fprintf( fp, "//    first   count   looping   fps\r\n\r\n" );
 
       char warning[] = " (MUST NOT CHANGE -- hand animation is synced to this)";
-      for ( int anim = 0; anim < MD3_ANIMATIONS; anim++ )
+      size_t animCount = m_model->getAnimCount( m_animationMode );
+
+      size_t longestName = 16; // minimum name length for spacing
+      for ( size_t anim = 0; anim < animCount; anim++ )
       {
-         int animIndex = 0;
+         std::string name = getSafeName( anim );
+         size_t len = name.length();
+         if (len > longestName) {
+            longestName = len;
+         }
+      }
+
+      for ( size_t anim = 0; anim < animCount; anim++ )
+      {
          int animFrame = 0;
          int count = 1;
          int fps   = 15;
-         getExportAnimData( anim, animIndex, animFrame, count, fps );
+         if (!getExportAnimData( (int)anim, animFrame, count, fps ))
+         {
+            continue;
+         }
 
          int loop = count; // loop by default
 
+         std::string name = getSafeName( anim );
+         size_t len = name.length();
+         for ( size_t n = 0; n < len; n++ )
+         {
+            name[n] = std::toupper(name[n]);
+         }
+
          // disable looping on non-looping anims
-         if ( count <= 1 || s_animLoop[anim] == 0 )
+         if ( count <= 1 || !m_model->getAnimationLooping( m_animationMode, anim ) )
          {
             loop = 0;
          }
 
-         char name[30];
-         strcpy( name, s_animNames[anim] );
-         size_t len = strlen( name );
-         for ( size_t n = 0; n < len; n++ )
+         // Convert to Elite Force Single Player Style
+         if (eliteLoop)
          {
-            name[n] = toupper( name[n] );
+            if (loop == 0)
+               loop = -1; // No loop
+            else
+               loop = 0; // Loop
          }
 
-         fprintf( fp, "%d\t%d\t%d\t%d\t\t// %s%s\r\n", 
-               animFrame, count, loop, fps, name,
-               (s_animSyncWarning[anim] ? warning : "") );
+         if (animKeyword)
+         {
+            // Align animFrame
+            const size_t MAX_SPACES = 40;
+            char spaces[MAX_SPACES+2] = {' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',
+                                 ' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ','\0'};
+            size_t maxSpaces = (longestName+6 > MAX_SPACES) ? MAX_SPACES : longestName+6;
+
+            spaces[((name.length() < maxSpaces) ? (maxSpaces - name.length()) : 0)] = '\0';
+
+            if (animSyncWarning(name))
+               fprintf( fp, "%s%s\t%d\t%d\t%d\t%d\t\t// %s\r\n", 
+                     name.c_str(), spaces, animFrame, count, loop, fps, warning );
+            else
+               fprintf( fp, "%s%s\t%d\t%d\t%d\t%d\r\n", 
+                     name.c_str(), spaces, animFrame, count, loop, fps );
+         }
+         else
+         {
+            fprintf( fp, "%d\t%d\t%d\t%d\t\t// %s%s\r\n", 
+                  animFrame, count, loop, fps, name.c_str(),
+                  (animSyncWarning(name) ? warning : "") );
+         }
       }
       fclose( fp );
       return true;
@@ -2458,54 +3846,99 @@ Matrix Md3Filter::getMatrixFromPoint( int anim, int frame, int point )
    return m;
 }
 
-void Md3Filter::getExportAnimData( int fileAnim, int & modelAnim, 
+Md3Filter::MeshAnimationTypeE Md3Filter::getAnimationType(const std::string animName)
+{
+   MeshAnimationTypeE animType = MA_All;
+
+   if (strncasecmp(animName.c_str(), "both_", 5) == 0)
+   {
+      animType = MA_Both;
+   }
+   else if (strncasecmp(animName.c_str(), "torso_", 6) == 0)
+   {
+      animType = MA_Torso;
+   }
+   else if (strncasecmp(animName.c_str(), "legs_", 5) == 0)
+   {
+      animType = MA_Legs;
+   }
+   else if (strncasecmp(animName.c_str(), "head_", 5) == 0)
+   {
+      animType = MA_Head;
+   }
+
+   return animType;
+}
+
+bool Md3Filter::getExportAnimData( int modelAnim,
       int & fileFrame, int & frameCount, int & fps )
 {
    fileFrame  = 0;
    frameCount = 0;
 
-   size_t animCount = m_model->getAnimCount( Model::ANIMMODE_FRAME );
+   size_t animCount = m_model->getAnimCount( m_animationMode );
+   std::string animName = getSafeName( modelAnim );
+   MeshAnimationTypeE animType = getAnimationType(animName);
+
+   // If this is a "dead" animation and its after a "death" animation
+   //   and it has 0 frames, use the last frame of the death animation.
+   if (modelAnim > 0 && ((strncasecmp(animName.c_str(), "all_dead", 8) == 0
+         && strncasecmp(getSafeName( modelAnim - 1 ).c_str(), "all_death", 9) == 0)
+      || (strncasecmp(animName.c_str(), "both_dead", 9) == 0
+         && strncasecmp(getSafeName( modelAnim - 1 ).c_str(), "both_death", 10) == 0))
+      && m_model->getAnimFrameCount( m_animationMode, modelAnim ) == 0 )
+   {
+      if (getExportAnimData( modelAnim - 1, fileFrame, frameCount, fps ))
+      {
+         fileFrame += frameCount - 1;
+         frameCount = 1;
+         return true;
+      }
+   }
 
    for ( size_t a = 0; a < animCount; a++ )
    {
       std::string name = getSafeName( a );
       if ( animInSection( name, MS_Upper )
-            || animInSection( name, MS_Lower ) )
+            || animInSection( name, MS_Lower )
+            || animInSection( name, MS_Head ))
       {
-         if ( strcasecmp( s_animNames[ fileAnim ], name.c_str() ) == 0 )
+         MeshAnimationTypeE type = getAnimationType(name);
+         if ( (int)a == modelAnim )
          {
-            frameCount = m_model->getAnimFrameCount( Model::ANIMMODE_FRAME, a );
-            fps   = (int) m_model->getAnimFPS( Model::ANIMMODE_FRAME, a );
+            frameCount = m_model->getAnimFrameCount( m_animationMode, a );
+            fps   = (int) m_model->getAnimFPS( m_animationMode, a );
 
             if ( fps <= 0 ) // just being paranoid
             {
                fps = 15;
             }
 
-            return;
+            if (animType > MA_Torso)
+            {
+               // Must still count torso animations after this for fileFrame
+               //   and in the case of 'head' we must also count legs animations
+            }
+            else
+            {
+               return true;
+            }
          }
-         else
+         // All torso frames go before leg frames, all legs go after tosro
+         else if (((int)a < modelAnim && animType >= type) || ((int)a > modelAnim && animType > type))
          {
-            fileFrame += m_model->getAnimFrameCount( Model::ANIMMODE_FRAME, a );
+               fileFrame += m_model->getAnimFrameCount( m_animationMode, a );
          }
       }
    }
 
-   // if this is a "dead" animation and there isn't a "dead" animation, try the
-   // last frame of the "death" animation.
-   if ( fileAnim < 6 && (fileAnim % 2) == 1 )
+   if (animType > MA_Torso && frameCount)
    {
-      fileAnim--;
-      getExportAnimData( fileAnim, modelAnim, fileFrame, frameCount, fps );
-      if ( modelAnim >= 0 )
-      {
-         fileFrame += frameCount - 1;
-         frameCount = 1;
-         return;
-      }
+      // Finished adding up fileFrame for legs or head animations
+      return true;
    }
 
-   modelAnim = -1;
+   return false;
 }
 
 size_t Md3Filter::writeIdentity()
@@ -2644,6 +4077,181 @@ bool Md3Filter::getVertexNormal( Model * model, int groupId, int vertexId, float
    return false;
 }
 
+#ifdef MDR_GENERAL
+//
+#define MC_BITS_X (16)
+#define MC_BITS_Y (16)
+#define MC_BITS_Z (16)
+#define MC_BITS_VECT (16)
+
+#define MC_SCALE_X (1.0f/64)
+#define MC_SCALE_Y (1.0f/64)
+#define MC_SCALE_Z (1.0f/64)
+
+//
+#define MC_MASK_X ((1<<(MC_BITS_X))-1)
+#define MC_MASK_Y ((1<<(MC_BITS_Y))-1)
+#define MC_MASK_Z ((1<<(MC_BITS_Z))-1)
+#define MC_MASK_VECT ((1<<(MC_BITS_VECT))-1)
+
+#define MC_SCALE_VECT (1.0f/(float)((1<<(MC_BITS_VECT-1))-2))
+
+#define MC_POS_X (0)
+#define MC_SHIFT_X (0)
+
+#define MC_POS_Y ((((MC_BITS_X))/8))
+#define MC_SHIFT_Y ((((MC_BITS_X)%8)))
+
+#define MC_POS_Z ((((MC_BITS_X+MC_BITS_Y))/8))
+#define MC_SHIFT_Z ((((MC_BITS_X+MC_BITS_Y)%8)))
+
+#define MC_POS_V11 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z))/8))
+#define MC_SHIFT_V11 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z)%8)))
+
+#define MC_POS_V12 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT))/8))
+#define MC_SHIFT_V12 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT)%8)))
+
+#define MC_POS_V13 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*2))/8))
+#define MC_SHIFT_V13 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*2)%8)))
+
+#define MC_POS_V21 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*3))/8))
+#define MC_SHIFT_V21 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*3)%8)))
+
+#define MC_POS_V22 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*4))/8))
+#define MC_SHIFT_V22 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*4)%8)))
+
+#define MC_POS_V23 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*5))/8))
+#define MC_SHIFT_V23 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*5)%8)))
+
+#define MC_POS_V31 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*6))/8))
+#define MC_SHIFT_V31 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*6)%8)))
+
+#define MC_POS_V32 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*7))/8))
+#define MC_SHIFT_V32 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*7)%8)))
+
+#define MC_POS_V33 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*8))/8))
+#define MC_SHIFT_V33 ((((MC_BITS_X+MC_BITS_Y+MC_BITS_Z+MC_BITS_VECT*8)%8)))
+
+#ifdef MDR_LOAD
+// NOTE: Copied from ioquake3
+void Md3Filter::MC_UnCompress(float mat[3][4],const unsigned char * comp)
+{
+   int val;
+
+   val=(int)((unsigned short *)(comp))[0];
+   val-=1<<(MC_BITS_X-1);
+   mat[0][3]=((float)(val))*MC_SCALE_X;
+
+   val=(int)((unsigned short *)(comp))[1];
+   val-=1<<(MC_BITS_Y-1);
+   mat[1][3]=((float)(val))*MC_SCALE_Y;
+
+   val=(int)((unsigned short *)(comp))[2];
+   val-=1<<(MC_BITS_Z-1);
+   mat[2][3]=((float)(val))*MC_SCALE_Z;
+
+
+   val=(int)((unsigned short *)(comp))[3];
+   val-=1<<(MC_BITS_VECT-1);
+   mat[0][0]=((float)(val))*MC_SCALE_VECT;
+
+   val=(int)((unsigned short *)(comp))[4];
+   val-=1<<(MC_BITS_VECT-1);
+   mat[0][1]=((float)(val))*MC_SCALE_VECT;
+
+   val=(int)((unsigned short *)(comp))[5];
+   val-=1<<(MC_BITS_VECT-1);
+   mat[0][2]=((float)(val))*MC_SCALE_VECT;
+
+
+   val=(int)((unsigned short *)(comp))[6];
+   val-=1<<(MC_BITS_VECT-1);
+   mat[1][0]=((float)(val))*MC_SCALE_VECT;
+
+   val=(int)((unsigned short *)(comp))[7];
+   val-=1<<(MC_BITS_VECT-1);
+   mat[1][1]=((float)(val))*MC_SCALE_VECT;
+
+   val=(int)((unsigned short *)(comp))[8];
+   val-=1<<(MC_BITS_VECT-1);
+   mat[1][2]=((float)(val))*MC_SCALE_VECT;
+
+
+   val=(int)((unsigned short *)(comp))[9];
+   val-=1<<(MC_BITS_VECT-1);
+   mat[2][0]=((float)(val))*MC_SCALE_VECT;
+
+   val=(int)((unsigned short *)(comp))[10];
+   val-=1<<(MC_BITS_VECT-1);
+   mat[2][1]=((float)(val))*MC_SCALE_VECT;
+
+   val=(int)((unsigned short *)(comp))[11];
+   val-=1<<(MC_BITS_VECT-1);
+   mat[2][2]=((float)(val))*MC_SCALE_VECT;
+}
+#endif
+
+#ifdef MDR_EXPORT
+// Based on MC_UnCompress from ioquake3
+// NOTE: mat[0,1,2][0,1,2] can only be -1 to 1, mat[0,1,2][3] can only be -512 to 511
+void Md3Filter::MC_Compress(const float mat[3][4],unsigned char * comp)
+{
+   float val;
+
+   val=((float)(mat[0][3]))/MC_SCALE_X;
+   val+=1<<(MC_BITS_X-1);
+   ((unsigned short *)(comp))[0]=(unsigned short)(val);
+
+   val=((float)(mat[1][3]))/MC_SCALE_Y;
+   val+=1<<(MC_BITS_Y-1);
+   ((unsigned short *)(comp))[1]=(unsigned short)(val);
+
+   val=((float)(mat[2][3]))/MC_SCALE_Z;
+   val+=1<<(MC_BITS_Z-1);
+   ((unsigned short *)(comp))[2]=(unsigned short)(val);
+
+
+   val=((float)(mat[0][0]))/MC_SCALE_VECT;
+   val+=1<<(MC_BITS_VECT-1);
+   ((unsigned short *)(comp))[3]= (unsigned short)(val);
+
+   val=((float)(mat[0][1]))/MC_SCALE_VECT;
+   val+=1<<(MC_BITS_VECT-1);
+   ((unsigned short *)(comp))[4]= (unsigned short)(val);
+
+   val=((float)(mat[0][2]))/MC_SCALE_VECT;
+   val+=1<<(MC_BITS_VECT-1);
+   ((unsigned short *)(comp))[5]=(int)(val);
+
+
+   val=((float)(mat[1][0]))/MC_SCALE_VECT;
+   val+=1<<(MC_BITS_VECT-1);
+   ((unsigned short *)(comp))[6]=(int)(val);
+
+   val=((float)(mat[1][1]))/MC_SCALE_VECT;
+   val+=1<<(MC_BITS_VECT-1);
+   ((unsigned short *)(comp))[7]=(int)(val);
+
+   val=((float)(mat[1][2]))/MC_SCALE_VECT;
+   val+=1<<(MC_BITS_VECT-1);
+   ((unsigned short *)(comp))[8]=(int)(val);
+
+
+   val=((float)(mat[2][0]))/MC_SCALE_VECT;
+   val+=1<<(MC_BITS_VECT-1);
+   ((unsigned short *)(comp))[9]=(int)(val);
+
+   val=((float)(mat[2][1]))/MC_SCALE_VECT;
+   val+=1<<(MC_BITS_VECT-1);
+   ((unsigned short *)(comp))[10]=(int)(val);
+
+   val=((float)(mat[2][2]))/MC_SCALE_VECT;
+   val+=1<<(MC_BITS_VECT-1);
+   ((unsigned short *)(comp))[11]=(int)(val);
+}
+#endif
+#endif
+
 //MM3D internal stuff
 
 bool Md3Filter::canRead( const char * filename )
@@ -2672,7 +4280,12 @@ bool Md3Filter::isSupported( const char * filename )
    log_debug( "isSupported( %s )\n", filename );
    unsigned len = strlen( filename );
 
+#ifdef MDR_GENERAL
+   if ( len >= 4 && ( strcasecmp( &filename[len-4], ".md3" ) == 0
+      || strcasecmp( &filename[len-4], ".mdr" ) == 0 ) )
+#else
    if ( len >= 4 && strcasecmp( &filename[len-4], ".md3" ) == 0 )
+#endif
    {
       log_debug( "  true\n" );
       return true;
@@ -2688,6 +4301,9 @@ list< string > Md3Filter::getReadTypes()
 {
    list<string> rval;
    rval.push_back( "*.md3" );
+#ifdef MDR_LOAD
+   rval.push_back( "*.mdr" );
+#endif
    return rval;
 }
 
@@ -2695,6 +4311,9 @@ list< string > Md3Filter::getWriteTypes()
 {
    list<string> rval;
    rval.push_back( "*.md3" );
+#ifdef MDR_EXPORT
+   rval.push_back( "*.mdr" );
+#endif
    return rval;
 }
 
