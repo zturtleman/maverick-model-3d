@@ -1,6 +1,7 @@
 /*  Md3Filter plugin for Maverick Model 3D
  *
  *  Copyright (c) 2005-2007 Russell Valentine and Kevin Worcester
+ *  Copyright (c) 2009-2011 Zack "ZTurtleMan" Middleton
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -27,6 +28,18 @@
  */
 #ifndef __MD3FILTER_H
 #define __MD3FILTER_H
+
+#define TURTLE_ARENA // Enable special tag support for my ioquake3 mod, Turtle Arena, that should not be in mm3d?
+
+#define MDR_LOAD // Unfinished
+#define MDR_EXPORT // Unfinished
+
+#if defined MDR_LOAD || defined MDR_EXPORT
+#define MDR_GENERAL // Stuff for load and export
+#define MDR_VERSION 2
+#endif
+
+
 
 #define MD3_VERSION 15
 #define MAX_QPATH 64
@@ -73,6 +86,16 @@ class Md3Filter : public ModelFilter
 
    protected:
 
+#ifdef MDR_GENERAL
+      typedef enum _MeshType_e
+      {
+         MT_None,
+         MT_MD3,
+         MT_MDR,
+         MT_MAX
+      } MeshTypeE;
+#endif
+
       typedef enum _MeshSection_e
       {
          MS_None = -1,
@@ -81,6 +104,17 @@ class Md3Filter : public ModelFilter
          MS_Head,
          MS_MAX
       } MeshSectionE;
+
+      typedef enum _MeshAnimationType_e
+      {
+         MA_All,
+         MA_Both,
+         MA_Torso,
+         MA_Legs,
+         // NOTE: Team Arena has extra torso animations after legs
+         MA_Head,
+         MA_MAX
+      } MeshAnimationTypeE;
 
       typedef struct _MeshVectorInfo_t
       {
@@ -100,18 +134,27 @@ class Md3Filter : public ModelFilter
 
       typedef struct _Md3FileData_t
       {
+#ifdef MDR_GENERAL
+         MeshTypeE type; // MD3 or MDR
+#endif
          MeshSectionE section;
          string modelBaseName;
          string modelFile;
          string tag;
          int32_t tagPoint;
          DataSource * src;
-         int32_t offsetMeshes;
-         int32_t numMeshes;
+         int32_t offsetMeshes; // MD3 only
+         int32_t numMeshes; // MD3 only
          int32_t offsetTags;
          int32_t numTags;
          int32_t numFrames;
-         MeshVectorInfoT ** meshVecInfos;
+         MeshVectorInfoT ** meshVecInfos; // MD3 only
+#ifdef MDR_GENERAL
+         // Only used by MDR
+         int32_t numBones;
+         int32_t numLODs;
+         int32_t offsetLODs;
+#endif
       } Md3FileDataT;
       typedef std::list< Md3FileDataT > Md3FileDataList;
 
@@ -127,6 +170,10 @@ class Md3Filter : public ModelFilter
 
       bool     readAnimations( bool create );
 
+#ifdef MDR_LOAD
+      void MDRsetBoneJoints(MeshSectionE section, bool compressed, int32_t offsetFrames, int32_t numFrames,
+            int32_t numBones, int32_t offsetTags, int32_t numTags, int32_t parentTag, int32_t animIndex);
+#endif
       void     setMeshes( MeshSectionE section, int32_t offsetMeshes, int32_t numMeshes, int32_t parentTag, int32_t animIndex);
       int32_t  setSkins(char *meshName);
       void     setPoints(MeshSectionE section, int32_t offsetTags, int32_t numTags, int32_t numFrames, int32_t parentTag, int32_t animIndex);
@@ -141,15 +188,23 @@ class Md3Filter : public ModelFilter
       // Indicates if the animation specified is contained in the 
       // specified MD3 model section 
       bool     animInSection( std::string animName, MeshSectionE section );
-      bool     groupInSection( std::string animName, MeshSectionE section );
-      bool     tagInSection( std::string animName, MeshSectionE section );
-      bool     tagIsSectionRoot( std::string animName, MeshSectionE section );
+      bool     groupInSection( std::string groupName, MeshSectionE section );
+#ifdef MDR_EXPORT
+      bool     boneJointInSection( std::string jointName, MeshSectionE section );
+#endif
+      bool     tagInSection( std::string tagName, MeshSectionE section );
+      bool     tagIsSectionRoot( std::string tagName, MeshSectionE section );
 
       // Path handling functions
       std::string extractPath( const char * md3DataPath );
       std::string materialToPath( int materialIndex );
       std::string sectionToPath( int materialIndex );
       std::string defaultPath();
+
+#ifdef MDR_GENERAL
+      bool isMdr(const char *filename);
+      Model::AnimationModeE animMode(Md3Filter::MeshTypeE type);
+#endif
 
       Model      * m_model;
       DataSource * m_src;
@@ -158,24 +213,39 @@ class Md3Filter : public ModelFilter
       string    m_modelPath;
       string    m_modelBaseName;
       std::vector<int> m_animStartFrame;
-      int              m_standFrame;
-      int              m_idleFrame;
+      int              m_standFrame; // torso
+      int              m_idleFrame; // legs
+      int              m_headFrame; // head
       std::string      m_lastMd3Path;
       Md3PathList      m_pathList;
+      Model::AnimationModeE m_animationMode;
 
       //writes
+#ifdef MDR_EXPORT
+      Model::ModelErrorE writeSectionFile( const char * filename, Md3Filter::MeshTypeE type,
+            Md3Filter::MeshSectionE section, MeshList & meshes );
+#else
       Model::ModelErrorE writeSectionFile( const char * filename, MeshSectionE section, MeshList & meshes );
+#endif
       bool     writeAnimations();
       size_t   writeIdentity();
       DataDest * m_dst;
 
       //writes util
+      bool animSyncWarning(std::string name);
       bool     getVertexNormal(Model * model, int groupId, int vertexId, float *normal);
       double   greater(double a, double b);
       double   smaller(double a, double b);
       Matrix   getMatrixFromPoint( int anim, int frame, int point );
-      void getExportAnimData( int fileAnim, int & modelAnim, 
+      MeshAnimationTypeE getAnimationType(const std::string animName);
+      bool getExportAnimData( int modelAnim,
             int & fileFrame, int & frameCount, int & fps );
 
+#ifdef MDR_LOAD
+      void MC_UnCompress(float mat[3][4],const unsigned char * comp);
+#endif
+#ifdef MDR_EXPORT
+      void MC_Compress(const float mat[3][4],unsigned char * comp);
+#endif
 };
 #endif // __MD3FILTER_H
