@@ -2235,11 +2235,8 @@ Model::ModelErrorE Md3Filter::writeFile( Model * model, const char * const filen
       if ( haveUpper && haveLower )
       {
          if (  m_model->getPointByName( "tag_torso" )  < 0
-#ifdef TURTLE_ARENA // Turtle Arena supports using tag_hand_primary as well as tag_weapon ...
-            || (m_model->getPointByName( "tag_weapon" ) < 0 && m_model->getPointByName( "tag_hand_primary" ) < 0)
-#else
-            || m_model->getPointByName( "tag_weapon" ) < 0
-#endif
+            // ZTM: Mods may not require this and it isn't needed for saving.
+            //|| m_model->getPointByName( "tag_weapon" ) < 0
             || m_model->getPointByName( "tag_head" )   < 0 )
          {
             // missing required tags for player model
