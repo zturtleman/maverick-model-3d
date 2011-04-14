@@ -2560,23 +2560,23 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
       bcount = m_model->getBoneJointCount();
       memset(bonesRemapM2S, 0, sizeof (bonesRemapM2S));
       memset(bonesRemapS2M, 0, sizeof (bonesRemapS2M));
-      if (section == MS_Head || section == MS_Lower || section == MS_Upper)
+
+      numBones = 0;
+      for ( unsigned j = 0; j < bcount; j++ )
       {
-         numBones = 0;
-         for ( unsigned j = 0; j < bcount; j++ )
+         if ( boneJointInSection( m_model->getBoneJointName( j ), section ) )
          {
-            if ( boneJointInSection( m_model->getBoneJointName( j ), section ) )
-            {
-               bonesRemapM2S[j] = numBones; // MM3D joint to section joint
-               bonesRemapS2M[numBones] = j; // section joint to MM3D joint
-               numBones++;
-            }
+            bonesRemapM2S[j] = numBones; // MM3D joint to section joint
+            bonesRemapS2M[numBones] = j; // section joint to MM3D joint
+            numBones++;
          }
       }
-      else
-      {
-         numBones = (int32_t) bcount;
-      }
+
+#define SAVE_BONES_AS_TAGS
+#ifdef SAVE_BONES_AS_TAGS
+      numTags = numBones;
+#endif
+
       log_debug("bones joints in section = %d, total bones joints = %d\n", numBones, bcount);
 
       offsetFrames = MDR_HEADER_SIZE;
@@ -2850,7 +2850,13 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
 
                      fm.getRotation( rotVector );
                      fm.getTranslation( origin );
-#elif 1
+
+                     // ZTM: Fix rotation?
+                     Matrix tmp;
+                     tmp.setRotationInDegrees(Vector(-90,0,0));
+                     fm = fm * tmp;
+                     fm.getRotation( rotVector );
+#else
                      double spf = (1.0 / m_model->getAnimFPS( Model::ANIMMODE_SKELETAL, a ));
                      unsigned int frameCount = m_model->getAnimFrameCount( Model::ANIMMODE_SKELETAL, a );
                      double totalTime = spf * frameCount;
@@ -2873,12 +2879,6 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
 
                      final.getRotation( rotVector );
                      final.getTranslation( origin );
-#else
-                     bool m_animationLoop = m_model->getAnimationLooping( m_animationMode, a );
-                     m_model->interpSkelAnimKeyframe( a, t, m_animationLoop, joint, true, rotVector[0], rotVector[1], rotVector[2] );
-
-                     // origin
-                     m_model->interpSkelAnimKeyframe( a, t, m_animationLoop, joint, false, origin[0], origin[1], origin[2] );
 #endif
                   }
 
@@ -3067,8 +3067,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
       for (int i = 0; i < numLODs; i++)
       {
          m_dst->write( (int32_t) numMeshes );
-         m_dst->write( (int32_t) (numLODs-i)*MDR_LOD_SIZE ); // offset of the first surface from this LOD
-                                                             // ZTM: FIXME: Don't have all LODs point to the same surfaces.
+         m_dst->write( (int32_t) 0 ); // offset of the first surface from this LOD (set below)
          m_dst->write( (int32_t) MDR_LOD_SIZE ); // offset of the next LOD from this LOD
       }
 
@@ -3239,7 +3238,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
                   double meshVec[4] = {0,0,0,1};
                   double meshNor[4] = {0,0,0,1};
 
-                  m_model->getVertexCoords( (*vit).v, meshVec );
+                  m_model->getVertexCoordsUnanimated( (*vit).v, meshVec );
 
                   // NORMAL
                   float meshNorF[3];
@@ -3280,7 +3279,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
                   // Don't allow negative weights, or divide by zero
                   if ( totalWeight < 0.0005 )
                   {
-                     totalWeight = 1.0;
+                     totalWeight = 0.0005;
                   }
 
                   // ZTM: FIXME: I have no idea if this is right
@@ -3609,6 +3608,60 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
       //TAGS
       log_debug( "writing tags at %d/%d\n", offsetTags, m_dst->offset() );
 
+#ifdef SAVE_BONES_AS_TAGS // Save bone names, tags use tag name; this way MD3View shows all 'joints' (with names)...
+      // Tag
+      for ( unsigned joint = 0; joint < bcount; joint++ )
+      {
+         if ( !boneJointInSection( m_model->getBoneJointName( joint ), section ) )
+            continue;
+
+         // Check for tag
+         int point = -1;
+         for (unsigned p = 0; p < pcount; p++)
+         {
+            if ( !tagInSection( m_model->getPointName( p ), section ) )
+               continue;
+
+            if (m_model->getPointBoneJoint(p) == (int)joint)
+            {
+               point = p;
+               break;
+            }
+         }
+
+         if (point == -1) {
+            // Get and write MDR bone joint index
+            int32_t boneIndex = joint;
+            m_dst->write(boneIndex);
+
+            char tName[32];
+            memset( tName, 0, sizeof( tName ) );
+            if ( PORT_snprintf( tName, sizeof( tName ), "%s", m_model->getBoneJointName(joint) ) >= (int)sizeof( tName ) )
+            {
+               log_error( "Point name is to long.\n" );
+               m_model->setFilterSpecificError( transll( QT_TRANSLATE_NOOP( "LowLevel", "Point name is too long." ) ).c_str() );
+               return Model::ERROR_FILTER_SPECIFIC;
+            }
+            m_dst->writeBytes( (uint8_t*) tName, sizeof( tName ) );
+         } else {
+            // Get and write MDR bone joint index
+            int32_t boneIndex = bonesRemapM2S[m_model->getPointBoneJoint(point)];
+            m_dst->write(boneIndex);
+
+            char tName[32];
+            memset( tName, 0, sizeof( tName ) );
+            if ( PORT_snprintf( tName, sizeof( tName ), "%s", m_model->getPointName( point ) ) >= (int)sizeof( tName ) )
+            {
+               log_error( "Point name is to long.\n" );
+               m_model->setFilterSpecificError( transll( QT_TRANSLATE_NOOP( "LowLevel", "Point name is too long." ) ).c_str() );
+               return Model::ERROR_FILTER_SPECIFIC;
+            }
+            m_dst->writeBytes( (uint8_t*) tName, sizeof( tName ) );
+
+            log_debug("tag %d %s is attached to section-joint %d %s\n", joint, tName, boneIndex, m_model->getBoneJointName(bonesRemapS2M[boneIndex]));
+         }
+      }
+#else
       // Tags in MDR are simple (bone index and name)
       for ( unsigned j = 0; j < pcount; j++ )
       {
@@ -3631,6 +3684,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
             log_debug("tag %d %s is attached to section-joint %d %s\n", j, tName, boneIndex, m_model->getBoneJointName(bonesRemapS2M[boneIndex]));
          }
       }
+#endif
    }
 #endif
 
