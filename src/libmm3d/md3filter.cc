@@ -2969,20 +2969,15 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
    m_model->setNoAnimation();
 
 #ifdef MDR_EXPORT
-   if (type == MT_MDR)
-   {
-      // Tags in MDR are done later.
-   }
-   else // MT_MD3
+   if (type == MT_MD3)
    {
 #endif
-
    //TAGS
    log_debug( "writing tags at %d/%d\n", offsetTags, m_dst->offset() );
 
    for ( a = 0; a < animCount; a++ )
    {
-      if ( animInSection( getSafeName( a ), section ) 
+      if ( animInSection( getSafeName( a ), section )
             || (numAnims == 0 && a == 0) )
       {
          unsigned aFrameCount = m_model->getAnimFrameCount( Model::ANIMMODE_FRAME, a );
@@ -3053,19 +3048,38 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
 #ifdef MDR_EXPORT
    if (type == MT_MDR)
    {
+      //for each LOD
+         // write the number of surfaces (Meshes) (numSurfaces),
+         // offset of the first surfaces (Meshes) (offsetSurfaces),
+         // and the offset of the next LOD (offsetEnd)
+      // end LODs
+
+      //for each LOD
+         // Write surfaces (Meshes) for LOD
+      // end LODs
+
       // Write MDR LODs
       log_debug( "writing LODs at %d/%d\n", offsetLODs, m_dst->offset() );
-#if 1
-      int32_t lodEndPos;
-      int32_t offsetEndLod = 0;
+
+      int32_t lodStartPos = m_dst->offset();
 
       // Write LODs
       for (int i = 0; i < numLODs; i++)
       {
          m_dst->write( (int32_t) numMeshes );
-         m_dst->write( (int32_t) MDR_LOD_SIZE ); // offset of the first mesh from this LOD
-         lodEndPos = m_dst->offset();
-         m_dst->write( (int32_t) offsetEndLod ); // offset of the next LOD from this LOD
+         m_dst->write( (int32_t) (numLODs-i)*MDR_LOD_SIZE ); // offset of the first surface from this LOD
+                                                             // ZTM: FIXME: Don't have all LODs point to the same surfaces.
+         m_dst->write( (int32_t) MDR_LOD_SIZE ); // offset of the next LOD from this LOD
+      }
+
+      // Write surfaces for each LOD
+      for (int i = 0; i < numLODs; i++)
+      {
+         int32_t curPos = m_dst->offset();
+
+         m_dst->seek( lodStartPos + i * MDR_LOD_SIZE + sizeof (int32_t));
+         m_dst->write( curPos - lodStartPos );
+         m_dst->seek( curPos );
 
          for ( mlit = meshes.begin(); mlit != meshes.end(); mlit++ )
          {
@@ -3272,7 +3286,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
                   // ZTM: FIXME: I have no idea if this is right
                   for ( it = ilist.begin(); it != ilist.end(); it++ )
                   {
-                     float32_t     boneWeight = ((*it).m_weight / totalWeight);
+                     float32_t boneWeight = ((*it).m_weight / totalWeight);
                      float     offset[3] = {0.0f, 0.0f, 0.0f};
                      // MD4: offset gives the direction vector of the weight's influence.
 
@@ -3280,7 +3294,7 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
                      Vector forward, right, up;
 
                      m_model->getBoneJointAbsoluteMatrix((*it).m_boneId, rotMatrix);
-                     rotMatrix = rotMatrix*saveMatrix; // FIXME?: Should be 'bone.transform as matrix3'
+                     rotMatrix = rotMatrix*saveMatrix; // ZTM: FIXME?: Should be 'bone.transform as matrix3'
                      //rotMatrix.setTranslation(0,0,0);
 
                      forward[0] = rotMatrix.get(0,0);
@@ -3324,14 +3338,6 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
                }
             }
          }
-
-         // Go fix offsetEndLod
-         offsetEndLod = m_dst->offset() - offsetLODs;
-         m_dst->seek( lodEndPos );
-         m_dst->write( offsetEndLod );
-         m_dst->seek( (offsetLODs+offsetEndLod) );
-
-         offsetLODs = offsetEndLod; // for next LOD
       }
 
       // ZTM: TODO: Should offsetTags be set at the begining?
@@ -3345,15 +3351,6 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
 
       // Now go write the tags!
       m_dst->seek( offsetTags );
-#else // Below is what needs to be done.
-      //for each LOD
-         // write the number of surfaces (Meshes) (numSurfaces),
-         // offset of the first surfaces (Meshes) (offsetSurfaces),
-         // and the offset of the next LOD (offsetEnd)
-
-         // Write surface (Mesh)
-      // end LODs
-#endif
    }
    else // MT_MD3
    {
@@ -3634,10 +3631,6 @@ Model::ModelErrorE Md3Filter::writeSectionFile( const char * filename, Md3Filter
             log_debug("tag %d %s is attached to section-joint %d %s\n", j, tName, boneIndex, m_model->getBoneJointName(bonesRemapS2M[boneIndex]));
          }
       }
-   }
-   else // MT_MD3
-   {
-      // Tags are done already.
    }
 #endif
 

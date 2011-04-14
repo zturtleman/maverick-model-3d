@@ -60,7 +60,7 @@ Section "Maverick Model 3D"
     WriteRegStr HKCU "Software\MaverickModel\Maverick Model 3D" "INSTDIR" "$INSTDIR"
 
     File COPYING
-    File mm3d.exe
+    File build/mingw32-x86/mm3d.exe
     File /r /x .svn /x *.htm /x Makefile /x Makefile.* /x *.ts doc imageformats i18n
     File dll\*.dll
 
