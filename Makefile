@@ -569,7 +569,7 @@ endef
 
 .PHONY: all mm3d_ui mm3d_moc mm3d clean
 
-all: config mm3d_ui mm3d_moc mm3d
+all: makedirs mm3d_ui mm3d_moc mm3d
 
 makedirs:
 	@if [ ! -d ${B} ];then ${MKDIR} ${B};fi
@@ -581,9 +581,6 @@ makedirs:
 	@if [ ! -d ${B}/libmm3d ];then ${MKDIR} ${B}/libmm3d;fi
 	@if [ ! -d ${B}/mm3dcore ];then ${MKDIR} ${B}/mm3dcore;fi
 	@if [ ! -d ${B}/commands ];then ${MKDIR} ${B}/commands;fi
-
-config: makedirs
-#	${CP} config.h.mingw config.h
 
 mm3d_ui: ${MM3D_UI}
 
