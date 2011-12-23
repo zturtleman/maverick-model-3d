@@ -98,6 +98,10 @@ endif
 else
 	B=${BUILD}/linux-${ARCH}
 
+ifndef PREFIX
+	PREFIX=/usr/local
+endif
+
 ifndef QTDIR
 	QTDIR = /usr/share/qt4
 endif
@@ -150,6 +154,8 @@ endif
 		BASE_FLAGS += -m64
 	endif
 	endif
+
+	BASE_FLAGS += -DPREFIX="\"$(PREFIX)\""
 
 	BINEXT=.${ARCH}
 endif
@@ -596,6 +602,16 @@ else
 endif
 
 mm3d: $(BIN)/mm3d${BINEXT}
+
+install:
+ifeq ($(PLATFORM),mingw32)
+	$(echo_cmd) "See install.bat"
+else
+	$(Q)${MKDIR} -p "$(PREFIX)/bin"
+	$(Q)$(CP) $(BIN)/mm3d${BINEXT} "$(PREFIX)/bin/mm3d"
+	$(Q)${MKDIR} -p "$(PREFIX)/share/doc/maverickmodel3d"
+	$(Q)$(CP) -r doc/* "$(PREFIX)/share/doc/maverickmodel3d"
+endif
 
 installer: mm3d
 	cp -r ../dll .
