@@ -1,6 +1,6 @@
 If you're seeing this file it is probably because you used Mercurial to get
 the source code for this program. If that is the case you may be wondering
-how to build it (since there isn't a ./configure script to run).
+how to build it.
 
 The ./configure script and many other files are output files from an early
 stage of the build process. Those output files are not included in source
@@ -14,12 +14,9 @@ in this directory may be helpful.
 
 To build MM3D:
 
-Run the ./autosetup.sh script. This runs autoconf and automake. If those run
-successfully you will have a ./configure script you can run to start the
-normal build process. To start the normal build process, see the INSTALL
-file. If you have problems building the translation files and documentation
-html files, you can just run "make" from the src/ directory instead of 
-the top level trunk directory.
+To start the normal build process, see the INSTALL file. If you have problems
+building the translation files and documentation html files, you can just run
+"make" from the src/ directory instead of the top level trunk directory.
 
 To build i18n translation files:
 
@@ -35,5 +32,5 @@ The help files in doc/html are source files that use templates to build the
 final help pages that appear in the mm3d help window. To build these final
 html pages you will need to use the hpagemake.pl perl script in the util
 directory. The perl script requires the HTML::Template perl library to be
-installed. You can get this library from CPAN. 
+installed. You can get this library from CPAN.
 

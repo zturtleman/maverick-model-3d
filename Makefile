@@ -74,8 +74,14 @@ ifeq ($(PLATFORM),mingw32)
 ifndef QTDIR
 	QTDIR = C:/Qt4
 endif
+ifndef QT_INCLUDE_DIR
+	QT_INCLUDE_DIR=${QTDIR}/include
+endif
+ifndef QT_LIB_DIR
+	QT_LIB_DIR=${QTDIR}/lib
+endif
 ifndef QT_LIBS
-	QT_LIBS =-L${QTDIR}/lib -lQtCore4 -lQtGui4 -lQtOpenGL4 -lQtNetwork4
+	QT_LIBS = -lQtCore4 -lQtGui4 -lQtOpenGL4 -lQtNetwork4
 endif
 
 	CC=mingw32-gcc
@@ -92,7 +98,7 @@ ifndef MOC
 	MOC=${QTDIR}/bin/moc.exe
 endif
 
-	LINK=${QT_LIBS} -mwindows -lopengl32 -lglu32 -lwsock32
+	LINK=-L${QT_LIB_DIR} ${QT_LIBS} -mwindows -lopengl32 -lglu32 -lwsock32
 
 	BINEXT=.${ARCH}.exe
 else
@@ -105,8 +111,14 @@ endif
 ifndef QTDIR
 	QTDIR = /usr/share/qt4
 endif
+ifndef QT_INCLUDE_DIR
+	QT_INCLUDE_DIR=${QTDIR}/include
+endif
+ifndef QT_LIB_DIR
+	QT_LIB_DIR=${QTDIR}/lib
+endif
 ifndef QT_LIBS
-	QT_LIBS = -L/usr/${LIB} -lQtCore -lQtGui -lQtOpenGL -lQtNetwork
+	QT_LIBS = -lQtCore -lQtGui -lQtOpenGL -lQtNetwork
 endif
 
 	CC=gcc
@@ -144,7 +156,7 @@ endif
 	endif
 	endif
 
-	LINK=${QT_LIBS} -lGLU -lGL -lSM -lICE  -lX11 -lXext -lXmu -lXt -lXi
+	LINK=-L${QT_LIB_DIR} ${QT_LIBS} -lGLU -lGL -lSM -lICE  -lX11 -lXext -lXmu -lXt -lXi
 
 	ifeq ($(ARCH),i386)
 		# linux32 make ...
@@ -161,7 +173,7 @@ endif
 endif
 
 #CXXFLAGS=-Wall -g3
-CXXFLAGS=-O1 ${BASE_FLAGS} -I${QTDIR}/include -DMM3D_EDIT -DQT3_SUPPORT -I. -I./src -I./src/libmm3d -I./src/mm3dcore -I./src/depui -I./src/qtui -I./src/implui -I./src/commands -I./src/tools -I${B}/depui -I${B}/qtui -I${B}/implui -I${B}/commands
+CXXFLAGS=-O1 ${BASE_FLAGS} -I${QT_INCLUDE_DIR} -DMM3D_EDIT -DQT3_SUPPORT -I. -I./src -I./src/libmm3d -I./src/mm3dcore -I./src/depui -I./src/qtui -I./src/implui -I./src/commands -I./src/tools -I${B}/depui -I${B}/qtui -I${B}/implui -I${B}/commands
 DEFS=
 
 BIN=${B}
@@ -609,6 +621,7 @@ ifeq ($(PLATFORM),mingw32)
 else
 	$(Q)${MKDIR} -p "$(PREFIX)/bin"
 	$(Q)$(CP) $(BIN)/mm3d${BINEXT} "$(PREFIX)/bin/mm3d"
+	# FIXME: Copy plugins to "$(PREFIX)share/maverickmodel3d/plugins"
 	$(Q)${MKDIR} -p "$(PREFIX)/share/doc/maverickmodel3d"
 	$(Q)$(CP) -r doc/* "$(PREFIX)/share/doc/maverickmodel3d"
 endif
